@@ -1,4 +1,4 @@
-import xmlrpclib
+import xmlrpc.client as xmlrpc
 import requests
 import os
 
@@ -13,7 +13,7 @@ class Confluence(object):
     def __init__(self, username, password):
         self.__username = username
         self.__password = password
-        self.__server = xmlrpclib.ServerProxy(self.__site + "/rpc/xmlrpc")
+        self.__server = (xmlrpc.ServerProxy(self.__site + "/rpc/xmlrpc"))
         self.__token = self.__server.confluence2.login(self.__username, self.__password)
         self.__loginString = "?os_username={}&amp;os_password={}".format(self.__username, self.__password)
 
