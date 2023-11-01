@@ -37,7 +37,7 @@ def process_html_table(table: str) -> str:
 
 def extra_preprocessing(cleaned_text):
     cleaned_text = re.sub(r'\n+', '\n', cleaned_text)
-    cleaned_text = cleaned_text.replace('\xa0', ' ')
+    cleaned_text = cleaned_text.replace('\xa0', '\n')
 
     return cleaned_text
 
@@ -46,20 +46,27 @@ def process_html_content(content: str) -> str:
 
     soup = BeautifulSoup(content, 'html.parser')
 
-    # Define criteria to identify and remove irrelevant data
-    # You can customize this based on your specific needs
-    # For example, removing all <script> and <style> tags:
-    for script in soup(["script", "style"]):
-        script.extract()
+    tags_to_keep = ['h1', 'h2', 'h3', 'p', 'ul', 'ol', 'li', 'table', 'tr', 'td']
+
+    all_tags = soup.find_all()
+
+    # Loop through all tags in the document
+    for tag in all_tags:
+        if tag.name in tags_to_keep:
+            # Remove the names and IDs from the attributes of the tag
+            for attr in list(tag.attrs):
+                if attr not in ['href']:  # You can add more attributes to retain
+                    del tag[attr]
+        else:
+            # Remove the <span> tags and keep their content
+            if tag.name == 'span':
+                tag.unwrap()
 
     # Get the human-readable text
     cleaned_text = soup.get_text()
     cleaned_text = extra_preprocessing(cleaned_text)
 
     return cleaned_text
-
-
-
 
 
 

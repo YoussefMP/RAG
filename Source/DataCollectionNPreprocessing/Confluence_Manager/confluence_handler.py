@@ -4,10 +4,11 @@ V 1.0 > 21.10.2023
 """
 #########################################################################################################
 __DEBUG__ = True
+
 #########################################################################################################
-from Source.Preprocessing.html_preprocessing import *
+from Source.DataCollectionNPreprocessing.Preprocessing.html_preprocessing import process_html_content
+from Source.DataCollectionNPreprocessing.IO.io_operations import save_node_as_document
 from space_model_handler import PageNode
-from Source.IO.io_operations import *
 from atlassian import Confluence
 from tqdm import tqdm
 import argparse
@@ -122,7 +123,7 @@ if __name__ == "__main__":
 
         e = "y.ameur.mail@gmail.com"
         # at = os.getenv("CONF_TOKEN")
-        with open("./../_conf/Conf_api_token.txt", "r", encoding="utf-8") as token_file:
+        with open("../../_conf/Conf_api_token.txt", "r", encoding="utf-8") as token_file:
             at = token_file.readline()
 
         u = "https://rag-1-prototype.atlassian.net/wiki"
