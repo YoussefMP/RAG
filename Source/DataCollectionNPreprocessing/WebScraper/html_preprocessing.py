@@ -37,7 +37,7 @@ def process_html_table(table: str) -> str:
 
 def extra_preprocessing(cleaned_text):
     cleaned_text = re.sub(r'\n+', '\n', cleaned_text)
-    cleaned_text = cleaned_text.replace('\xa0', '\n')
+    cleaned_text = cleaned_text.replace('\xa0', ' ')
 
     return cleaned_text
 

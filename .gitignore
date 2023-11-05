@@ -1,6 +1,10 @@
 /RAG.iml
 /.idea
-/Source/_conf
+/Source/0_conf
 /Source/.cache
 /Source/openai_team/.cache/
 /Resources
+/Source/WebScraper/web_configs/
+/Source/Tests/
+/Source/1_Resouces/
+

@@ -1,35 +1,16 @@
 __DEBUG__ = True
 
+import os
 
-from Source.DataCollectionNPreprocessing.Preprocessing.html_preprocessing import extra_preprocessing
+from Source.DataCollectionNPreprocessing.WebScraper.html_preprocessing import extra_preprocessing
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
-from selenium import webdriver
+from crawler_driver import driver
 from bs4 import BeautifulSoup
 import requests
 import argparse
 import json
-
-
-try:
-    chrome_options = webdriver.ChromeOptions()
-    chrome_options.add_argument("--disable-application-cache")
-    chrome_options.add_argument("--disable-gpu-shader-disk-cache")
-    # chrome_options.add_argument("--disable-local-storage")
-    chrome_options.add_argument("--disable-offline-load-stale-cache")
-    chrome_options.add_argument("--disable-session-crashed-bubble")
-    chrome_options.add_argument("--disable-tcmalloc")
-    chrome_options.add_argument("--disable-threaded-compositing")
-    chrome_options.add_argument("--disable-web-security")
-    chrome_options.add_argument("--disk-cache-size=0")
-    chrome_options.add_argument("--media-cache-size=0")
-    chrome_options.add_argument("--v8-cache-options=off")
-    # Start a Selenium WebDriver (make sure you have installed a compatible driver for your browser)
-    driver = webdriver.Chrome(options=chrome_options)
-    # driver = webdriver.Chrome()
-except KeyboardInterrupt:
-    print("Program interrupted by user.")
 
 
 def get_static_page_content(link: str) -> (str, str, str):
@@ -39,8 +20,10 @@ def get_static_page_content(link: str) -> (str, str, str):
     """
     response = requests.get(link)
     soup = BeautifulSoup(response.text, "html.parser")
+    # find element containing the article content
     script_element = soup.find("script", {"id": "__NEXT_DATA__"})
 
+    title, date, content = None, None, None
     if script_element:
         # Extract the JSON data from the script element
         json_data = json.loads(script_element.string)
@@ -77,7 +60,15 @@ def mosaique_crawler(base_url, wc):
 
         # Find the div elements with the specified class
         section = soup.find('section')
-        articles = section.find_all("div", class_="row")[1]
+        try:
+            articles = section.find_all("div", class_="row")[1]
+        except IndexError:
+            articles = None
+            print(f"Under {section}, under this URL= {base_url + link} \n No rows could be found")
+
+        # Create folder to save the articles of the section
+        output_folder = f".\\..\\..\\1_Resouces\\Mosaique_articles_tests\\{tag}\\"
+        os.makedirs(output_folder, exist_ok=True)
 
         # Extract the article links from 'a' elements within the 'figure' elements
         article_links = []
@@ -86,15 +77,18 @@ def mosaique_crawler(base_url, wc):
             if a and 'href' in a.attrs:
                 article_links.append(a['href'])
 
-                title, date, content  = get_static_page_content(base_url + a['href'])
+                title, date, content = get_static_page_content(base_url + a['href'])
+                date = date.replace("-", "_").replace(" ", "_").replace(":", "_")[:19]
 
-                with open(f".\\article_{len(article_links)}.txt", "w", encoding="utf-8") as of:
-                    of.write(title + "\n")
-                    of.write(date + "\n")
-                    of.write(extra_preprocessing(content))
-                of.close()
-            break
-        break
+                output_file_name = f"article_{date}.txt"
+                output_file_path = output_folder + output_file_name
+
+                if not os.path.exists(output_file_path):
+                    with open(output_file_path, "w", encoding="utf-8") as of:
+                        of.write(title + "\n")
+                        of.write(extra_preprocessing(content))
+                        # of.write(content)
+                    of.close()
 
     # Don't forget to close the WebDriver when you're done
     driver.quit()
