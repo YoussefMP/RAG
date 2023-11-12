@@ -1,0 +1,29 @@
+{
+  "base_url": "https://www.pist.tn/",
+  "sections": [
+    {"Loi": "Loi"},
+    {"Loi-Constitutionnelle": "Loi+Constitutionnelle"},
+    {"Réglement": "Réglement"},
+    {"Avis": "Avis"},
+    {"Communiqué": "Communiqué"},
+    {"Rapport": "Rapport"},
+    {"Convention": "Convention"},
+    {"Décision": "Décision"},
+    {"Circulaire": "Circulaire"},
+    {"Arrêté": "Arrêté"},
+    {"Decret-Gouvernemental": "DecretGov"},
+    {"Decret-Presidentiel": "DecretPre"},
+    {"Decrét": "Decrét" },
+    {"Decrét-Loi": "Decrét-Loi"},
+    {"Loi-d-orientation": "Loi+d%27orientation"},
+    {"Loi-Organique": "Loi+Organique"}
+  ],
+  "texts": [
+    {"date": [{"ar": "تاريخ النص"}, {"fr": "Date du texte"}]},
+    {"number": [{"ar": "عدد"}, {"fr": "Numéro du texte"}]},
+    {"jort_nb": [{"ar": "عدد الرائد"}, {"fr": "Numéro Jort"}]},
+    {"fr_page": [{"ar": "الصفحة(النص باللغة الفرنسية) "}, {"fr": "Page (version française)"}]},
+    {"ar_page": [{"ar": "الصفحة(النص باللغة العربية)"}, {"fr": "Page (version arabe)"}]},
+    {"keywords": [{"ar": "كلمات مفاتيح"}, {"fr": "Mots clés"}]}
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "base_url": "https://www.mosaiquefm.net/",
+  "sections": [
+    {"summit-francophone": "ar/actualites/القمة-الفرنكوفونية/117", "pages": 2},
+    {"national-news":  "ar/actualites/تونس-أخبار-وطنية/1", "pages": 3211},
+    {"global-news":  "ar/actualites/الأخبار-العالمية/3", "pages": 532},
+    {"regional-news": "ar/actualites/أخبار-تونس-جهات/2", "pages": 1491},
+    {"economie-tunisie": "ar/actualites/أخبار-مال-أعمال-اقتصاد-تونس/5", "pages": 200},
+    {"politic-tunisie": "ar/actualites/أخبار-سياسة-تونس/4", "pages": 365},
+    {"midi-show": "ar/actualites/ميدي-شو-أخبار/13", "pages": 292},
+    {"society-news":  "ar/actualites/مجتمع-تونس-أخبار/15", "pages": 100},
+    {"mosaique-fm-tunis-global":  "ar/actualites/موزاييك-آف-آم-متفرقات-أخبار-تونس-أخبار-العالم/14", "pages": 114},
+    {"tech_news":  "ar/actualites/أخبار-تكنولوجيا-تونس-العالم/10", "pages": 26},
+    {"humor":  "ar/actualites/طرائف-أخبار/16", "pages": 11},
+    {"random":  "ar/actualites/بيانات-تونس/20", "pages": 134},
+    {"mosaique-fm-tunisie":  "ar/actualites/موزاييك-اف-ام-تونس/12", "pages": 32},
+    {"ramadan":  "/ar/actualites/تلفزة-رمضان/39", "pages": 45},
+    {"musique-news":  "ar/actualites/أخبار-موسيقى-تونس-العالم/9", "pages": 62}
+  ]
+}

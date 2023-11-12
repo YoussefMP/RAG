@@ -1,5 +1,5 @@
 """
-Script that handles all IO operation and some extras that will come later.
+Script that handles all FileIO operation and some extras that will come later.
 """
 
 import os
@@ -15,14 +15,14 @@ def write_to_file(path: str, content: str):
     out_file.close()
 
 
-def load_file_content_as_list(out_path: str) -> list[str]:
+def load_text_file_content_as_list(out_path: str) -> list[str]:
     with open(out_path, 'r', encoding='utf-8') as outfile:
         content = outfile.readlines()
 
     return content
 
 
-def load_file_content_as_str(out_path: str) -> str:
+def load_txt_file_content_as_str(out_path: str) -> str:
     with open(out_path, 'r', encoding='utf-8') as outfile:
         content = outfile.read()
     return content
@@ -58,3 +58,11 @@ def generate_child_file_path(path: str) ->str:
     parent_folder, title = path.rsplit("\\", 1)
     file_path = f"{parent_folder}\\{title}.txt"
     return file_path
+
+
+def list_folder_content(folder_path):
+    if os.path.exists(folder_path):
+        return os.listdir(folder_path)
+    else:
+        print(f"Could not find Folder {folder_path}")
+        return []
