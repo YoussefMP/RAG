@@ -204,7 +204,7 @@ def parse_year_docs(nb_results, year, typeId):
 
 def start_parsing():
 
-    years = 18
+    years = 25
     retry = 0
 
     s_type, s_year = get_start_record()
