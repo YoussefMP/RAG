@@ -8,6 +8,7 @@ source_folder_path = os.path.abspath(os.path.dirname(__file__))
 # Resources  ####
 #################
 resources_folder_path = os.path.join(source_folder_path, "1_Resouces")
+config_folder_path = os.path.join(source_folder_path, "0_conf")
 web_config_path = os.path.join(source_folder_path, "DataCollectionNPreprocessing/WebScraper/web_configs")
 
 # Mosaique

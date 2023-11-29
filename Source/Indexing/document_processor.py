@@ -1,13 +1,21 @@
+import torch.cuda
 from transformers import AutoTokenizer, AutoModel
 from arabert.preprocess import ArabertPreprocessor
 from Source.Logging.loggers import get_logger
-from embedding import process_batch
+from Source.Database_API.db_operations import DbManager
+from embedding import generate_embeddings, FOLDERS_IDS
 from Source.paths import *
 import json
 
-__DEBUG__ = True
+__DEBUG__ = False
 
-logger = get_logger("indexer", "indexing")
+logger = get_logger("indexer", "indexing.log")
+
+
+MODEL_NAME = "aubmindlab/bert-base-arabertv2"
+DB_NAME = "Tunisian_Law_Database"
+DB_HOST = "localhost"
+DB_PORT = 5432
 
 
 def load_data():
@@ -17,6 +25,8 @@ def load_data():
     if __DEBUG__:
         folders = ["قانون"]
 
+    data = {}
+
     for folder in folders:
         folder_path = os.path.join(jotr_documents_path, folder)
 
@@ -25,30 +35,57 @@ def load_data():
             file_path = os.path.join(folder_path, file_name)
 
             json_file = open(file_path, "r", encoding="utf-8")
-            data = json.load(json_file)
 
-            return data
+            td = json.load(json_file)
+            k = next(iter(td))
+            try:
+                data[f"{FOLDERS_IDS[folder]}-{file_name.replace('.json', '')}"] = td[k]
+            except TypeError:
+                print("wait")
+
+            yield data
+
+
+def load_database():
+
+    credentials = open(os.path.join(config_folder_path, "db_credentials.json"), "r", encoding="utf-8")
+    credentials = json.load(credentials)
+    db = DbManager(DB_NAME, user=credentials["user"], password=["password"], host=DB_HOST, port=DB_PORT)
+    return db
+
+
+def load_models():
+
+    logger.info("Loading preprocessing model...")
+    arabert_prep = ArabertPreprocessor(model_name=MODEL_NAME)
+
+    logger.info("Loading tokenizer...")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    tokenizer.bos_token = "[CLS]"
+    tokenizer.eos_token = "[SEP]"
+    tokenizer.pad_token = "[PAD]"
+
+    logger.info("Loading embedding model...")
+    model = AutoModel.from_pretrained(MODEL_NAME)
+    if torch.cuda.is_available():
+        logger.info("\t moving the model to CUDA")
+        model.to("cuda")
+
+    return arabert_prep, tokenizer, model
 
 
 def main():
 
-    logger.info("Loading the data from the csv files ...")
+    logger.info("Creating the Generator for the csv data files ...")
     data = load_data()
 
-    logger.info("Loading preprocessing model...")
-    model_name = "aubmindlab/bert-large-arabertv2"
-    arabert_prep = ArabertPreprocessor(model_name=model_name)
+    arabert_prep, tokenizer, model = load_models()
 
-    logger.info("Loading tokenizer...")
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    tokenizer.bos_token = "[CLS]"
-    tokenizer.eos_token = "[SEP]"
-
-    logger.info("Loading embedding model...")
-    model = AutoModel.from_pretrained(model_name)
+    logger.info("Initializing database...")
+    db = load_database()
 
     logger.info("Start embedding ...")
-    metadata_map, vec_batch = process_batch(arabert_prep, tokenizer, model, data)
+    metadata_map, vec_batch = generate_embeddings(arabert_prep, tokenizer, data, model, db)
 
 
 if __name__ == "__main__":
@@ -58,42 +95,8 @@ if __name__ == "__main__":
 
 
 
-# from Source.Indexing.Database_Manager import DBManager
-# from sentence_transformers import SentenceTransformer
-# from Source.Logging.loggers import get_logger
-# from Source.Indexing.docs_processor import *
-# from Source.paths import *
-# import tqdm
-# import csv
-#
-# __DEBUG__ = True
-#
-#
-# CONNECTION_STRING = "postgresql+psycopg2://postgres:test@localhost:5432/vector_db"
-# COLLECTION_NAME = "state_of_union_vectors"
-#
-# logger = get_logger("Embeddings", "embeddings_generator.log")
-#
-#
-# def generate_documents(base_path):
-#
-#     folders_list = os.listdir(base_path) if __DEBUG__ else ["2023"]
-#
-#     for year_folder in folders_list:
-#
-#         data = {}
-#         year_files_path = os.path.join(base_path, year_folder)
-#
-#         for file_name in os.listdir(year_files_path):
-#
-#             csv_path = os.path.join(year_files_path, file_name)
-#             with open(csv_path, newline='', encoding="utf-8") as csv_file:
-#                 data[(year_folder, file_name)] = list(csv.reader(csv_file))
-#             csv_file.close()
-#
-#         yield data
-#
-#
+
+
 # if __name__ == "__main__":
 #
 #     logger.info("Initiating Database...")
@@ -104,14 +107,4 @@ if __name__ == "__main__":
 #                            port="5432"
 #                            )
 #
-#     model = SentenceTransformer('sentence-transformers/all-mpnet-base-v2')
-#
-#     path = os.path.join(jotr_documents_path, "Loi_csv")
-#     logger.info(f"Setting the path of the csv files to {path}")
-#     logger.info("Loading the csv documents...")
-#     docs_generator = generate_documents(path)
-#
-#     for year_data in docs_generator:
-#         embeddings, meta_data = process_documents(model, year_data)
-#         db_manager.upsert_data()
 

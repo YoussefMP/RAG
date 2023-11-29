@@ -1,22 +1,18 @@
-from transformers import AutoTokenizer, AutoModel
-from arabert.preprocess import ArabertPreprocessor
-from Source.Logging.loggers import get_logger
-from torch.nn.functional import pad
+from Source.paths import *
+from tqdm import tqdm
+import logging
+import time
 import torch
 
-logger = get_logger("indexer", "indexing")
+logger = logging.getLogger("Embedder")
 
-chunk_size = 510
-overlap_size = 128
+CHUNK_SIZE = 510
+OVERLAP_SIZE = 64
 
-type_keys = {
-    "أمر": "4",
-    "رأي": "3",
-    "قانون": "2",
-    "قرار": "1",
-    "مرسوم": "0"
-}
+BATCH_SIZE = 65
 
+# TODO Transfer to a separate file at some pooint maybe
+FOLDERS_IDS = {"قانون": "0", "قرار": "1", "مرسوم": "2", "رأي": "3", "أمر": "4"}
 
 
 def reduce_dimensions_method_one(vector, chunks):
@@ -25,37 +21,68 @@ def reduce_dimensions_method_one(vector, chunks):
         return vector.mean(dim=1)
 
 
-def process_batch(preprocessor, tokenizer, model, data: dict):
+def generate_batches(data, preprocessor, tokenizer):
+    batch = {}
+    for entries_list in data.values():
 
-    meta_data_table = {}
-    vectors_table = []
+        for entry in entries_list:
 
-    did = 0
-
-    for year in data.keys():
-
-        logger.info(f"\t Year {year}")
-        for entry in data[year]:
-
-            meta_data_table[did] = entry["metadata"]
+            metadata = entry["metadata"]
+            if metadata is None:
+                continue
 
             text = entry["text"]
             preprocessed_text = preprocessor.preprocess(text)
             tokens = tokenizer.tokenize(preprocessed_text)
-            chunks = [tokens[i:i + chunk_size] for i in range(0, len(tokens), chunk_size - overlap_size)]
+            chunks = [tokens[i:i + CHUNK_SIZE] for i in range(0, len(tokens), CHUNK_SIZE - OVERLAP_SIZE)]
 
-            for i, chunk in enumerate(chunks):
-                chunk_input_ids = torch.tensor(
-                    [tokenizer.cls_token_id] + tokenizer.convert_tokens_to_ids(chunk) + [tokenizer.sep_token_id]
-                )
+            uid = (FOLDERS_IDS[metadata["type"]] + "-" +
+                   (metadata["journal_nb"] + "-" +
+                    metadata["date"].replace("/", "-") +
+                    "-" + metadata["text_nb"]))
 
-                padded_chunk = pad(chunk_input_ids,
-                                   pad=(0, chunk_size+2-chunk_input_ids.size()[0]),
-                                   mode='constant', value=0
-                                   )
+            for cid, chunk in enumerate(chunks):
+                cuid = uid + "-" + str(cid)
 
-                embedding = model(padded_chunk.unsqueeze(0))["last_hidden_state"]
-                reduced_embeddings = reduce_dimensions_method_one(embedding, 0)
-                vectors_table.append((did, reduced_embeddings))
+                batch[cuid] = {"metadata": metadata, "tokens": chunk}
 
-        return meta_data_table, vectors_table
+                if len(batch) == BATCH_SIZE:
+                    yield batch
+                    batch = {}
+
+    if batch:
+        yield batch
+
+
+def generate_embeddings(preprocessor, tokenizer, data_gen, model, db_manager):
+
+    data = next(data_gen)
+    # embeddings_file = open(os.path.join(resources_folder_path, "results", "iort_embeddings."), "a")
+
+    batch_gen = generate_batches(data, preprocessor, tokenizer)
+
+    for batch in tqdm(batch_gen, total=5000, desc="Processing"):
+        chunks = []
+        metadata_list = []
+
+        for cuid, value in batch.items():
+            chunk = value["tokens"]
+            token_ids = tokenizer.encode(" ".join(chunk),
+                                         add_special_tokens=True,
+                                         padding="max_length", truncation=True,
+                                         max_length=CHUNK_SIZE+2,
+                                         )
+            chunks.append(torch.tensor(token_ids, dtype=torch.int32))
+            metadata_list.append(value["metadata"])
+
+        tensor_chunks = torch.stack(chunks).to("cuda")
+
+        embeddings = model(tensor_chunks)
+        stored_vector = embeddings.mean(dim=1)
+
+
+
+        del embeddings
+        torch.cuda.empty_cache()
+
+
