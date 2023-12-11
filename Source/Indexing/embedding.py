@@ -1,10 +1,10 @@
 from Source.paths import *
-from tqdm import tqdm
+from Source.Logging.loggers import get_logger
 import logging
-import time
 import torch
+import gc
 
-logger = logging.getLogger("Embedder")
+logger = get_logger("Embedder", "indexing.log")
 
 CHUNK_SIZE = 510
 OVERLAP_SIZE = 64
@@ -13,6 +13,28 @@ BATCH_SIZE = 65
 
 # TODO Transfer to a separate file at some pooint maybe
 FOLDERS_IDS = {"قانون": "0", "قرار": "1", "مرسوم": "2", "رأي": "3", "أمر": "4"}
+
+
+def group_ids(ids):
+    """
+    This returns the number of chunks for each text. The number is repeated for each chunk of text, because of laziness
+    pretty sure there is a better way to do this.
+    :param ids: list of chunks UIDs
+    :return: Number of chunks for each text in a list.
+    """
+    id_groups = {}
+    group_count = 1
+
+    for cid in ids:
+        prefix = '-'.join(cid.split('-')[:-1])
+        if prefix in id_groups:
+            id_groups[prefix].append(group_count)
+        else:
+            id_groups[prefix] = [group_count]
+        group_count += 1
+
+    result = [len(groups) for groups in id_groups.values() for group in groups]
+    return result
 
 
 def reduce_dimensions_method_one(vector, chunks):
@@ -54,35 +76,45 @@ def generate_batches(data, preprocessor, tokenizer):
         yield batch
 
 
-def generate_embeddings(preprocessor, tokenizer, data_gen, model, db_manager):
+def generate_batch_embeddings(preprocessor, tokenizer, data_gen, model):
 
-    data = next(data_gen)
-    # embeddings_file = open(os.path.join(resources_folder_path, "results", "iort_embeddings."), "a")
+    for data in data_gen:
 
-    batch_gen = generate_batches(data, preprocessor, tokenizer)
+        batch_gen = generate_batches(data, preprocessor, tokenizer)
 
-    for batch in tqdm(batch_gen, total=5000, desc="Processing"):
-        chunks = []
-        metadata_list = []
+        for batch in batch_gen:
+            torch.cuda.empty_cache()
+            embeddings = None
+            vectors = None
+            gc.collect()
 
-        for cuid, value in batch.items():
-            chunk = value["tokens"]
-            token_ids = tokenizer.encode(" ".join(chunk),
-                                         add_special_tokens=True,
-                                         padding="max_length", truncation=True,
-                                         max_length=CHUNK_SIZE+2,
-                                         )
-            chunks.append(torch.tensor(token_ids, dtype=torch.int32))
-            metadata_list.append(value["metadata"])
+            chunks = []
+            metadata_list = []
+            cuids = []
 
-        tensor_chunks = torch.stack(chunks).to("cuda")
+            num_chunks_per_id = group_ids(batch.keys())
 
-        embeddings = model(tensor_chunks)
-        stored_vector = embeddings.mean(dim=1)
+            for cid, value in enumerate(batch.values()):
+                chunk = value["tokens"]
+                token_ids = tokenizer.encode(" ".join(chunk),
+                                             add_special_tokens=True,
+                                             padding="max_length", truncation=True,
+                                             max_length=CHUNK_SIZE+2,
+                                             )
+                chunks.append(torch.tensor(token_ids, dtype=torch.int32))
 
+                value["metadata"]["chunks"] = len(chunks)
+                metadata_list.append(value["metadata"])
 
+                cuids.append(num_chunks_per_id[cid])
 
-        del embeddings
-        torch.cuda.empty_cache()
+            tensor_chunks = torch.stack(chunks).to("cuda")
+
+            embeddings = model(tensor_chunks)
+            vectors = embeddings["last_hidden_state"].mean(dim=1)
+
+            vectors = vectors.cpu().detach().tolist()
+
+            yield cuids, vectors, metadata_list
 
 

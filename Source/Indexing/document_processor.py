@@ -2,19 +2,26 @@ import torch.cuda
 from transformers import AutoTokenizer, AutoModel
 from arabert.preprocess import ArabertPreprocessor
 from Source.Logging.loggers import get_logger
-from Source.Database_API.db_operations import DbManager
-from embedding import generate_embeddings, FOLDERS_IDS
+from Source.Database_API.db_operations import DbLocalManager, DBPineconeManager
+from embedding import generate_batch_embeddings, FOLDERS_IDS
 from Source.paths import *
+from tqdm import tqdm
 import json
 
 __DEBUG__ = False
 
 logger = get_logger("indexer", "indexing.log")
 
-
+# Model Name
 MODEL_NAME = "aubmindlab/bert-base-arabertv2"
-DB_NAME = "Tunisian_Law_Database"
-DB_HOST = "localhost"
+
+# model's embeddings dimensions
+DIMENSIONS = {"aubmindlab/bert-base-arabertv2": 768, }
+
+# Database Variables
+DB_HOST = "pinecone"
+
+DB_NAME = "tunisian-law-database"
 DB_PORT = 5432
 
 
@@ -48,10 +55,25 @@ def load_data():
 
 def load_database():
 
-    credentials = open(os.path.join(config_folder_path, "db_credentials.json"), "r", encoding="utf-8")
-    credentials = json.load(credentials)
-    db = DbManager(DB_NAME, user=credentials["user"], password=["password"], host=DB_HOST, port=DB_PORT)
-    return db
+    if "local" in DB_HOST:
+        credentials = open(os.path.join(config_folder_path, "db_credentials.json"), "r", encoding="utf-8")
+        credentials = json.load(credentials)
+        db = DbLocalManager(DB_NAME, user=credentials["user"], password=["password"], host=DB_HOST, port=DB_PORT)
+        return db
+
+    elif "pinecone" in DB_HOST:
+
+        metadata_config = {"indexed": ["text_year", "type"]} if "arabertv2" in MODEL_NAME else None
+
+        credentials = open(os.path.join(config_folder_path, "pinecone_api.json"), "r", encoding="utf-8")
+        credentials = json.load(credentials)
+
+        db = DBPineconeManager(DB_NAME,
+                               credentials["environment"], credentials["api_key"],
+                               DIMENSIONS[MODEL_NAME], metadata_config)
+
+        db.create_index()
+        return db
 
 
 def load_models():
@@ -85,7 +107,10 @@ def main():
     db = load_database()
 
     logger.info("Start embedding ...")
-    metadata_map, vec_batch = generate_embeddings(arabert_prep, tokenizer, data, model, db)
+    batch = generate_batch_embeddings(arabert_prep, tokenizer, data, model)
+
+    for next_batch in tqdm(batch, total=3900, desc="Processing"):
+        db.upsert_batch_with_metadata(next_batch)
 
 
 if __name__ == "__main__":
@@ -95,16 +120,4 @@ if __name__ == "__main__":
 
 
 
-
-
-# if __name__ == "__main__":
-#
-#     logger.info("Initiating Database...")
-#     db_manager = DBManager(dbname="vector_db",
-#                            user="postgres",
-#                            password="test",
-#                            host="localhost",
-#                            port="5432"
-#                            )
-#
 
