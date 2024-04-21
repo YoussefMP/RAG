@@ -11,8 +11,10 @@ OVERLAP_SIZE = 64
 
 BATCH_SIZE = 65
 
+RESTART_CONDITION = True
+
 # TODO Transfer to a separate file at some pooint maybe
-FOLDERS_IDS = {"قانون": "0", "قرار": "1", "مرسوم": "2", "رأي": "3", "أمر": "4"}
+FOLDERS_IDS = {"قانون": "0", "قرار": "1", "مرسوم": "2", "رإي": "3", "أمر": "4"}
 
 
 def group_ids(ids):
@@ -60,7 +62,7 @@ def generate_batches(data, preprocessor, tokenizer):
 
             uid = (FOLDERS_IDS[metadata["type"]] + "-" +
                    (metadata["journal_nb"] + "-" +
-                    metadata["date"].replace("/", "-") +
+                    metadata["text_date"].replace("/", "-") +
                     "-" + metadata["text_nb"]))
 
             for cid, chunk in enumerate(chunks):
@@ -77,12 +79,23 @@ def generate_batches(data, preprocessor, tokenizer):
 
 
 def generate_batch_embeddings(preprocessor, tokenizer, data_gen, model):
+    """
+
+    :param preprocessor:
+    :param tokenizer:
+    :param data_gen:
+    :param model:
+    :return:
+    """
+
+    global RESTART_CONDITION
+    processed_batches = 0
 
     for data in data_gen:
-
         batch_gen = generate_batches(data, preprocessor, tokenizer)
 
         for batch in batch_gen:
+
             torch.cuda.empty_cache()
             embeddings = None
             vectors = None
@@ -94,7 +107,8 @@ def generate_batch_embeddings(preprocessor, tokenizer, data_gen, model):
 
             num_chunks_per_id = group_ids(batch.keys())
 
-            for cid, value in enumerate(batch.values()):
+            for cid, item in enumerate(batch.items()):
+                cuid, value = item[0], item[1]
                 chunk = value["tokens"]
                 token_ids = tokenizer.encode(" ".join(chunk),
                                              add_special_tokens=True,
@@ -103,15 +117,16 @@ def generate_batch_embeddings(preprocessor, tokenizer, data_gen, model):
                                              )
                 chunks.append(torch.tensor(token_ids, dtype=torch.int32))
 
-                value["metadata"]["chunks"] = len(chunks)
+                value["metadata"]["chunks"] = num_chunks_per_id[cid]
                 metadata_list.append(value["metadata"])
 
-                cuids.append(num_chunks_per_id[cid])
+                cuids.append(cuid)
 
             tensor_chunks = torch.stack(chunks).to("cuda")
 
             embeddings = model(tensor_chunks)
-            vectors = embeddings["last_hidden_state"].mean(dim=1)
+            # This takes the embedding of the [CLS] Token.
+            vectors = embeddings["last_hidden_state"][:, 0, :]
 
             vectors = vectors.cpu().detach().tolist()
 

@@ -1,5 +1,4 @@
 import os.path
-
 import selenium
 from bs4 import BeautifulSoup
 from selenium import webdriver
@@ -12,6 +11,10 @@ import json
 from Source.paths import *
 from Source.Logging import loggers
 from time import sleep
+from datetime import datetime
+from Source.Database_API.db_operations import DbLocalManager
+from Source.Embedding.document_processor import load_database
+
 
 logger = loggers.get_logger("iort_logger", "iort_scraper.log")
 
@@ -23,7 +26,8 @@ chrome_options = webdriver.ChromeOptions()
 driver = webdriver.Chrome(options=chrome_options)
 search_url = 'http://www.iort.gov.tn/'
 
-types = ["قانون", "مرسوم", "أمر", "قرار", "رأي"]
+types = ["قانون", "مرسوم", "أمر", "قرار", "رإي"]
+TYPES_IDS = {"قانون": "0", "قرار": "1", "مرسوم": "2", "رإي": "3", "أمر": "4"}
 
 
 def update_start_record(s_type, s_year):
@@ -43,11 +47,13 @@ def get_start_record():
         try:
             start_record = f.read()
             s_type, s_year = int(start_record.split("-")[0]), int(start_record.split("-")[1])
-        except IndexError or ValueError:
-            return 2, 2
+        except ValueError or IndexError:
+            # 2 for the type because the Web element starts at index 1
+            # 1 for the year because the for loop is in reverse and stop at 2
+            return 2, 1
         return s_type, s_year
     else:
-        return 2, 2
+        return 2, 1
 
 
 def refresh_link():
@@ -69,9 +75,15 @@ def write_data(doc_type, file_name, data):
     # Saving the returned data to the file
     file_folder = os.path.join(jotr_documents_path, doc_type)
     os.makedirs(file_folder, exist_ok=True)
+    logger.info(f"Opening file {os.path.join(file_folder, file_name)} to write data.")
     with open(os.path.join(file_folder, file_name), 'w', encoding='utf-8') as json_file:
         json.dump(data, json_file, ensure_ascii=False, indent=2)
     json_file.close()
+
+
+def write_data_to_db(data):
+    response = db_manager.upsert_batch_with_metadata(data)
+    return response
 
 
 def load_next_batch(current_page, jumpto=None):
@@ -107,20 +119,33 @@ def load_next_batch(current_page, jumpto=None):
 
 
 def extract_meta_data(title):
-    fields_map = {"A10": "text_title", "A14": "text_year", "A9": "text_nb", "A13": "date",
-                  "A6": "journal_date", "A5": "journal_nb", "A12": "type"}
+    # Efficiency
+    # "A14": "text_year" Removed this key
+    fields_map = {"A10": "text_title", "A9": "text_nb", "A13": "text_date", "A15": "ministry",
+                  "A6": "journal_date", "A5": "journal_nb", "A12": "document_type"}
 
     try:
         meta_data = {"text_title": driver.find_element("id", "A10").text}
+
         for element_name in list(fields_map.keys())[1:]:
-            field = driver.find_element("id", element_name)
-            meta_data[fields_map[element_name]] = field.get_attribute("value")
+            if "date" in fields_map[element_name]:
+                field = driver.find_element("id", element_name)
+                date_object = datetime.strptime(field.get_attribute("value"), "%d/%m/%Y")
+                formatted_date = date_object.strftime("%Y-%m-%d")
+                meta_data[fields_map[element_name]] = formatted_date
+            else:
+                field = driver.find_element("id", element_name)
+                meta_data[fields_map[element_name]] = field.get_attribute("value")
+
+        meta_data["document_id"] = (TYPES_IDS[meta_data["document_type"]] + meta_data["journal_nb"] +
+                                    meta_data["text_date"].replace("-", "")) + meta_data["text_nb"]
         return meta_data
+
     except selenium.common.exceptions.NoSuchElementException:
-        (logger.error(f"Error extracting metadata => {title}"))
+        (logger.error(f"NoSuchElementException: Error extracting metadata => {title}"))
         return None
     except selenium.common.exceptions.WebDriverException:
-        (logger.error(f"Error extracting metadata => {title}"))
+        (logger.error(f"WebDriverException: Error extracting metadata => {title}"))
         return None
     except Exception as e:
         (logger.error(f"Error extracting metadata => {title}"))
@@ -157,6 +182,15 @@ def handle_content(title):
 
 
 def parse_year_docs(nb_results, year, typeId):
+    """
+    Parses the retrieved texts and saves them to files in batches of 50. If the batch-file-name already exists, the
+    script jumps to the next batch.
+    :param nb_results: number of results the search returned. To use as a cutoff condition
+    :param year: year of publication, also used as key for storing the data
+    :param typeId: ID of the type of the text also used as a folder name.
+
+    :return: dict: that contains the metadata and the texts
+    """
     year_data = {year: []}
     processed_batches = 0
     results_exist = True
@@ -165,16 +199,17 @@ def parse_year_docs(nb_results, year, typeId):
         # Find and click on the element that triggers the dynamic content
         elements = driver.find_elements("name", "A2")
 
-        if processed_batches % 50 == 0:
+        if processed_batches % 2 == 0:
             if os.path.exists(
                     os.path.join(jotr_documents_path, types[typeId], f'{year}_{int((processed_batches / 50)+1)}.json')
             ):
-                logger.info("\t Found file of the records for the next 50 years")
+                logger.info("\t Found file of the records for the next 50 entries")
                 processed_batches += 50
                 load_next_batch(processed_batches)
                 continue
             if processed_batches > 0:
-                write_data(types[typeId], f'{year}_{int(processed_batches / 50)}.json', year_data)
+                # write_data(types[typeId], f'{year}_{int(processed_batches / 50)}.json', year_data)
+                write_data_to_db(year_data[year])
                 year_data = {year: []}
 
         for element in elements:
@@ -184,7 +219,23 @@ def parse_year_docs(nb_results, year, typeId):
                 logger.error(f"Error parsing docs of year {year} after processing {processed_batches * 20}")
             try:
                 text, meta_data = handle_content(element.text)
-                year_data[year].append({"text": text, "metadata": meta_data})
+
+                # The below line is the old version Used for PineCone
+                try:
+                    keys_in_order = ["document_id", "text_title", "document_text", "text_nb", "text_date",
+                                     "journal_date", "journal_nb", "document_type", "ministry"]
+                    meta_data["document_text"] = text
+                    data_insert_format = []
+
+                    for key in keys_in_order:
+                        data_insert_format.append(meta_data[key])
+
+                    year_data[year].append(data_insert_format)
+
+                except TypeError:
+                    print("ETTTe")
+                # year_data[year].append({"text": text,  "metadata": meta_data})
+
             except (selenium.common.exceptions.StaleElementReferenceException
                     or selenium.common.exceptions.NoSuchElementException
                     or selenium.common.exceptions.TimeoutException):
@@ -204,39 +255,42 @@ def parse_year_docs(nb_results, year, typeId):
 
 def start_parsing():
 
-    years = 18
+    years = 25
     retry = 0
 
     s_type, s_year = get_start_record()
 
     for a_type in range(s_type, len(types)+2):
+        # len(types)+2 because in the website the dropdown menu index starts at 1 and the first option is empty
+        # so the first valid type is at index 2
         logger.info(f"Start the parising of files of type {types[a_type-2]}")
 
         if s_year == years:
-            s_year = 2
+            #
+            s_year = 1
 
-        for year in range(s_year, years+1):
+        for year in range(years+1, s_year-1, -1):
 
             # Update start record so on next iteration we don't start from scratch
             update_start_record(a_type, year)
 
-            logger.info(f"\tStart the parising of files of year {2025-year}")
+            logger.info(f"\tStart the parising of files of year {2026-year}")
             while retry < 3:
                 try:
                     # Find the dropdown (select) element and select an option
-                    dropdown = Select(driver.find_element(By.ID, 'A9'))  # Replace with the actual ID of the dropdown
-                    dropdown.select_by_value(str(a_type))  # Replace '2' with the value of the option you want to select
+                    dropdown = Select(driver.find_element(By.ID, 'A9'))     # Field A9 is for the text type
+                    dropdown.select_by_value(str(a_type))
                     break
                 except selenium_exceptions.NoSuchElementException:
                     refresh_link()
                     retry += 1
 
             # Find the dropdown (select) element and select an option
-            dropdown = Select(driver.find_element(By.ID, 'A8'))  # Replace with the actual ID of the dropdown
-            dropdown.select_by_value(str(year))  # Replace '2' with the value of the option you want to select
+            dropdown = Select(driver.find_element(By.ID, 'A8'))     # Field A8 is for the year dropdown menu
+            dropdown.select_by_value(str(year))
 
             # Find and click the search button
-            search_button = driver.find_element(By.NAME, 'A40')  # Replace with the actual name of the button
+            search_button = driver.find_element(By.NAME, 'A40')
             search_button.click()
 
             # Wait for the search results to load (you may need to adjust the wait time)
@@ -247,8 +301,9 @@ def start_parsing():
             input_element = start_element.find_element(By.XPATH, './following-sibling::td/input[@type="TEXT"]')
             input_value = input_element.get_attribute('value')
 
-            data = parse_year_docs(int(input_value), 2025-year, a_type-2)
-            write_data(types[a_type - 2], f'{str(2025 - year)}.json', data)
+            data = parse_year_docs(int(input_value), 2026-year, a_type-2)
+            write_data_to_db(data[2026-year])
+            # write_data(types[a_type - 2], f'{str(2026 - year)}.json', data)
 
             refresh_link()
 
@@ -256,5 +311,7 @@ def start_parsing():
 if __name__ == "__main__":
     logger.info("Let the spider loose !!!.....")
     driver.get(search_url)    # Navigate to the website
+
+    db_manager = load_database()
 
     start_parsing()

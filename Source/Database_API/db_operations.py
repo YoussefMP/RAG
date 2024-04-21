@@ -1,12 +1,17 @@
 from Source.Logging.loggers import get_logger
-import logging
 import psycopg2
+from psycopg2.extras import execute_values
 import pinecone
 import os
 import time
 
 
 logger = get_logger("__DB__", "indexing.log")
+
+
+class DbManager:
+    def upsert_batch_with_metadata(self, data):
+        pass
 
 
 class DbLocalManager:
@@ -23,7 +28,7 @@ class DbLocalManager:
 
         self.cur = self.conn.cursor()
 
-    def insert(self, vectors_data):
+    def insert_vector(self, vectors_data):
         try:
             self.cur.executemany("""
                 INSERT INTO vectors_table (document_id, vector_column_name)
@@ -32,7 +37,22 @@ class DbLocalManager:
 
             self.conn.cursor()
         except Exception as e:
-            print("Log Exception")
+            print(f"Log Exception {e}")
+
+    def upsert_batch_with_metadata(self, data):
+        try:
+            sql = """
+                INSERT INTO document_data 
+                (document_id, text_title, document_text, text_nb, text_date, journal_date, journal_nb, document_type, ministry) 
+                VALUES %s
+            """
+            execute_values(self.cur, sql, data)
+
+            self.conn.cursor()
+
+        except Exception as e:
+
+            print(f"Log Exception {e}")
 
 
 class DBPineconeManager:
@@ -76,8 +96,18 @@ class DBPineconeManager:
         data = list(zip(cuids, vectors, metadata))
 
         logger.debug("\tUpserting Batch...")
-        upsert_response = self.index.upsert(
-            vectors=data
-        )
-        logger.debug(f"\t\tResponse: {upsert_response}")
+        tries = 0
+        try:
+            upsert_response = self.index.upsert(
+                vectors=data
+            )
+            return upsert_response
+        except pinecone.core.client.exceptions.ServiceException as e:
+            tries += 1
+            time.sleep((5**tries))
+            if tries == 4:
+                raise e
+
+
+
 

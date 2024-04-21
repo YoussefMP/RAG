@@ -3,7 +3,7 @@ from transformers import AutoTokenizer, AutoModel
 from arabert.preprocess import ArabertPreprocessor
 from Source.Logging.loggers import get_logger
 from Source.Database_API.db_operations import DbLocalManager, DBPineconeManager
-from embedding import generate_batch_embeddings, FOLDERS_IDS
+from Source.Embedding.embedding import generate_batch_embeddings, FOLDERS_IDS
 from Source.paths import *
 from tqdm import tqdm
 import json
@@ -19,9 +19,10 @@ MODEL_NAME = "aubmindlab/bert-base-arabertv2"
 DIMENSIONS = {"aubmindlab/bert-base-arabertv2": 768, }
 
 # Database Variables
-DB_HOST = "pinecone"
+# DB_HOST = "pinecone"
+DB_HOST = "localhost"
 
-DB_NAME = "tunisian-law-database"
+DB_NAME = "Texts_Metadata_DB"
 DB_PORT = 5432
 
 
@@ -30,14 +31,14 @@ def load_data():
     folders.remove("Archive")
 
     if __DEBUG__:
-        folders = ["قانون"]
+        folders.remove("أمر")
 
     data = {}
-
     for folder in folders:
         folder_path = os.path.join(jotr_documents_path, folder)
 
         for file_name in os.listdir(folder_path):
+            data = {}
             logger.info(f"\tLoading the data from {folder} for the year {file_name.replace('.json', '')}")
             file_path = os.path.join(folder_path, file_name)
 
@@ -58,7 +59,7 @@ def load_database():
     if "local" in DB_HOST:
         credentials = open(os.path.join(config_folder_path, "db_credentials.json"), "r", encoding="utf-8")
         credentials = json.load(credentials)
-        db = DbLocalManager(DB_NAME, user=credentials["user"], password=["password"], host=DB_HOST, port=DB_PORT)
+        db = DbLocalManager(DB_NAME, user=credentials["user"], password=credentials["password"], host=DB_HOST, port=DB_PORT)
         return db
 
     elif "pinecone" in DB_HOST:
@@ -77,6 +78,9 @@ def load_database():
 
 
 def load_models():
+    """
+        This method load the models needed for the embedding of the texts as well as all the necessary pre-processing steps
+    """
 
     logger.info("Loading preprocessing model...")
     arabert_prep = ArabertPreprocessor(model_name=MODEL_NAME)
@@ -109,15 +113,11 @@ def main():
     logger.info("Start embedding ...")
     batch = generate_batch_embeddings(arabert_prep, tokenizer, data, model)
 
-    for next_batch in tqdm(batch, total=3900, desc="Processing"):
-        db.upsert_batch_with_metadata(next_batch)
+    for next_batch in tqdm(batch, total=2800, desc="Processing"):
+        upsert_response = db.upsert_batch_with_metadata(next_batch)
+        logger.debug(f"\t\tResponse: {upsert_response}")
 
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
 
