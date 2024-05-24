@@ -5,7 +5,6 @@ import pinecone
 import os
 import time
 
-
 logger = get_logger("__DB__", "indexing.log")
 
 
@@ -109,5 +108,9 @@ class DBPineconeManager:
                 raise e
 
 
-
-
+class DBNeo4JManager:
+    """This class manages all operations to the Neo4J database.
+     The queries are constructed using the cipher language.
+     """
+    def __init__(self, uri, user, password):
+        self.driver = GraphDatabase.driver(uri, auth=(user, password))

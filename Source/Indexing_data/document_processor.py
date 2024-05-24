@@ -3,7 +3,7 @@ from transformers import AutoTokenizer, AutoModel
 from arabert.preprocess import ArabertPreprocessor
 from Source.Logging.loggers import get_logger
 from Source.Database_API.db_operations import DbLocalManager, DBPineconeManager
-from Source.Embedding.embedding import generate_batch_embeddings, FOLDERS_IDS
+from Source.Indexing_data.embedding import generate_batch_embeddings, FOLDERS_IDS
 from Source.paths import *
 from tqdm import tqdm
 import json
@@ -20,7 +20,8 @@ DIMENSIONS = {"aubmindlab/bert-base-arabertv2": 768, }
 
 # Database Variables
 # DB_HOST = "pinecone"
-DB_HOST = "localhost"
+# DB_HOST = "localhost"
+DB_HOST = "Neo4J"
 
 DB_NAME = "Texts_Metadata_DB"
 DB_PORT = 5432

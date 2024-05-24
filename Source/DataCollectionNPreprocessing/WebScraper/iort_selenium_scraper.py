@@ -13,7 +13,7 @@ from Source.Logging import loggers
 from time import sleep
 from datetime import datetime
 from Source.Database_API.db_operations import DbLocalManager
-from Source.Embedding.document_processor import load_database
+from Source.Indexing_data.document_processor import load_database
 
 
 logger = loggers.get_logger("iort_logger", "iort_scraper.log")

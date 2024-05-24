@@ -4,6 +4,7 @@ Script that handles all FileIO operation and some extras that will come later.
 
 import os
 import re
+import json
 
 
 #######################
@@ -42,6 +43,16 @@ def save_node_as_document(base_folder, path, content):
             os.makedirs(os.path.join(base_folder, path))
 
 
+def dump_to_json(path, content):
+    """Given a path and a content dumps the content to a json file."""
+
+    create_folder_and_subfolders(path)
+
+    with open(path, 'w', encoding='utf-8') as outfile:
+        json.dump(content, outfile, ensure_ascii=False, indent=4)
+    outfile.close()
+
+
 #######################
 # Os methods    #######
 #######################
@@ -54,7 +65,22 @@ def make_os_conform(path):
     return name
 
 
+def create_folder_and_subfolders(file_path):
+    """
+    Given a file path, checks if all directories exist and creates them if not.
+    :param file_path:
+    """
+    dirname = os.path.dirname(file_path)
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+
+
 def generate_child_file_path(path: str) ->str:
+    """
+    Creates a text file in the folder with the same name as the parent folder.
+    :param path:
+    :return:
+    """
     parent_folder, title = path.rsplit("\\", 1)
     file_path = f"{parent_folder}\\{title}.txt"
     return file_path

@@ -80,7 +80,6 @@ def generate_batches(data, preprocessor, tokenizer):
 
 def generate_batch_embeddings(preprocessor, tokenizer, data_gen, model):
     """
-
     :param preprocessor:
     :param tokenizer:
     :param data_gen:
