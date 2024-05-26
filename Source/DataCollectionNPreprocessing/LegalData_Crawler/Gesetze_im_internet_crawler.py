@@ -37,9 +37,11 @@ def download_book_content(books):
     :return:
     """
 
+    depths = ["Buch", "Abschnitt", "Titel", "Untertitel", "Kapitel"]
+
     logger.info("Starting download of books")
     for book in books:
-        logger.info(f"Starting download of book {book}")
+        logger.info(f"\tStarting download of book {book}")
         # Make a GET request to the book page
         book_base_url = BASE_URL + book
         book_response = requests.get(book_base_url)
@@ -50,22 +52,63 @@ def download_book_content(books):
         main_element = soup.find('div', {'id': 'paddingLR12'})
         headers = main_element.find_all('td')
 
-        chapter_count = 1
-        chapter_title = "Begin"
-
-        book_content = {"Begin": {}}
-
+        if book == "stgb":
+            book_content = {"Begin": {},
+                            "Allgemeiner teil": {},
+                            "Besonderer Teil": {}
+                            }
+        else:
+            book_content = {"Begin": {}}
+        depth_stack = []
+        keys_stack = []
+        dict_iterator = book_content["Begin"]
         for i, header in enumerate(headers):
 
             if not header.find('a') or (header.has_attr("colspan") and header['colspan'] == "3"):
+                # Depth is known at this level
+                if header.has_attr("colspan") and header['colspan'] == "3":
+                    chapter_title = header.find('b').text
+
+                    for depth in depths:
+                        if depth in chapter_title:
+
+                            if depth in depth_stack:
+
+                                if depth != depth_stack[-1]:
+                                    depth_stack = depth_stack[:depth_stack.index(depth)+1]
+                                    keys_stack = keys_stack[:depth_stack.index(depth)+1]
+                                keys_stack[-1] = headers[i+2].find('b').text
+
+                                dict_iterator = book_content
+                                for key in keys_stack:
+                                    try:
+                                        dict_iterator = dict_iterator[key]
+                                    except KeyError:
+                                        dict_iterator[key] = {}
+                                        dict_iterator = dict_iterator[key]
+
+                            else:
+                                depth_stack.append(depth)
+                                keys_stack.append(headers[i+2].find('b').text)
+
+                                dict_iterator = book_content
+                                for key_index, key in enumerate(keys_stack):
+                                    try:
+                                        dict_iterator = dict_iterator[key]
+                                    except KeyError:
+                                        dict_iterator[key] = {}
+                                        dict_iterator = dict_iterator[key]
+
+                            break
+
+                    try:
+                        logger.info('\t' * (len(keys_stack)+2) + f"Reached depth {len(keys_stack)} - at {depth_stack[-1]} = {keys_stack[-1]}")
+                    except IndexError:
+                        print("F")
+
                 continue
 
             elif header.has_attr("colspan") and header['colspan'] == "2":
-                logger.info(f"\tFinished download of chapter {chapter_title}")
-                chapter_title = header.find('b').text
-                book_content[chapter_title] = {}
-                chapter_count += 1
-                logger.info(f"\tStarting download of chapter {i} - {chapter_title}")
                 continue
 
             elif header.find('a').has_attr("href"):
@@ -74,26 +117,29 @@ def download_book_content(books):
 
                 # Make a GET request to the law text page
                 article_response = requests.get(book_base_url + f"/{href}")
-                book_content[chapter_title][article_title]["url"] = book_base_url + f"/{href}"
 
                 # Parse the HTML content of the law text page
                 article_soup = BeautifulSoup(article_response.text, 'html.parser')      # features="%(parser)s"
                 article_title = link_element.text
 
                 if "weggefallen" in article_title:
-                    book_content[chapter_title][article_title]["texts"] = []
+                    dict_iterator[article_title] = {}
+                    dict_iterator[article_title]["texts"] = []
                     continue
 
                 # save the text of the law text to a list
                 article_content = article_soup.find("div", {"class": "jnhtml"})
-                book_content[chapter_title][article_title]["texts"] = handle_article_content(article_content)
+                # book_content[chapter_title][article_title]["texts"] = handle_article_content(article_content)
+                dict_iterator[article_title] = {}
+                dict_iterator[article_title]["texts"] = handle_article_content(article_content)
+                dict_iterator[article_title]["url"] = book_base_url + f"/{href}"
 
         book_file_path = os.path.join(paths.german_law_books, f"{book}.json")
         dump_to_json(book_file_path, book_content)
 
 
 if __name__ == "__main__":
-    BOOKS = ["gg", "bgb", "zpo", "stpo", "stgb"]
+    # BOOKS = ["bgb", "gg", "zpo", "stpo", "stgb"]
+    BOOKS = ["stgb"]
 
     download_book_content(BOOKS)
-

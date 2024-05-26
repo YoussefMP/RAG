@@ -4,6 +4,7 @@ from psycopg2.extras import execute_values
 import pinecone
 import os
 import time
+from neo4j import GraphDatabase
 
 logger = get_logger("__DB__", "indexing.log")
 
@@ -112,5 +113,8 @@ class DBNeo4JManager:
     """This class manages all operations to the Neo4J database.
      The queries are constructed using the cipher language.
      """
-    def __init__(self, uri, user, password):
-        self.driver = GraphDatabase.driver(uri, auth=(user, password))
+    def __init__(self, **kwargs):
+
+        self.driver = GraphDatabase.driver(kwargs["uri"], auth=(kwargs["username"], kwargs["password"]))
+        self.driver.verify_connectivity()
+
