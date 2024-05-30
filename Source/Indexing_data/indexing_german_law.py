@@ -1,11 +1,43 @@
 from Source.Logging.loggers import get_logger
-from Source.Database_API.db_operations import DBNeo4JManager
+from Source.Database_Client.Neo4J_Client import DBNeo4JManager
+from sentence_transformers import SentenceTransformer
 from Source import paths
 import os
 import json
 import neo4j
 
+DEBUG = True
+
 logger = get_logger("oldp_indexing_logger", "indexing_oldp.log")
+
+
+def generate_batch_embeddings(model, data):
+    return []
+
+
+def index_data(model, db_manager, data):
+    """
+    This function is used to index the embeddings generated from the paths of the law texts to a Neo4J database.
+    It also is used to create nodes and relationships in the database.
+    :param model: the embedding model used to embed the data.
+    :param db_manager: the database manager
+    :param data: dict containing the law texts whenre the path of keys represents the book and the sections of the text
+    :return:
+    """
+    logger.info("Start embedding...")
+    batch = generate_batch_embeddings(model, data)
+
+    for next_batch in batch:
+        upsert_response = db_manager.upsert_batch_with_metadata(next_batch)
+        logger.debug(f"\t\tResponse: {upsert_response}")
+
+
+def load_model(url, tokenizer=None):
+    if tokenizer:
+        return None
+    else:
+        model = SentenceTransformer(url, trust_remote_code=True)
+    return model
 
 
 def load_database():
@@ -24,33 +56,13 @@ def load_database():
 def load_data():
     files = list(os.listdir(paths.german_law_books))
 
+    if DEBUG:
+        files = files[:1]
+
     for file in files:
         json_data = json.load(open(os.path.join(paths.german_law_books, file), "r", encoding="utf-8"))
 
         yield json_data
-
-
-# def load_models():
-#     """
-#         This method load the models needed for the embedding of the texts as well as all the necessary pre-processing steps
-#     """
-#
-#     logger.info("Loading preprocessing model...")
-#     arabert_prep = ArabertPreprocessor(model_name=MODEL_NAME)
-#
-#     logger.info("Loading tokenizer...")
-#     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-#     tokenizer.bos_token = "[CLS]"
-#     tokenizer.eos_token = "[SEP]"
-#     tokenizer.pad_token = "[PAD]"
-#
-#     logger.info("Loading embedding model...")
-#     model = AutoModel.from_pretrained(MODEL_NAME)
-#     if torch.cuda.is_available():
-#         logger.info("\t moving the model to CUDA")
-#         model.to("cuda")
-#
-#     return arabert_prep, tokenizer, model
 
 
 def main():
@@ -58,18 +70,20 @@ def main():
     logger.info("Creating the Generator for the csv data files ...")
     data = load_data()
 
-    # arabert_prep, tokenizer, model = load_models()
-
-    logger.info("Initializing database...")
-    db = load_database()
-
-    
-    # logger.info("Start embedding ...")
-    # batch = generate_batch_embeddings(arabert_prep, tokenizer, data, model)
+    # logger.info("Initializing database...")
+    # db = load_database()
     #
-    # for next_batch in tqdm(batch, total=2800, desc="Processing"):
-    #     upsert_response = db.upsert_batch_with_metadata(next_batch)
-    #     logger.debug(f"\t\tResponse: {upsert_response}")
+    # model_url = "jinaai/jina-embeddings-v2-base-de"
+    # model = load_model(model_url)
+    #
+    # index_data(model, db, data)
+
+    # this loop iterated the data like a tree using postorder traversal
+
+
+# Usage:
+# for item in postorder_traversal(data):
+#     print(item)
 
 
 if __name__ == "__main__":

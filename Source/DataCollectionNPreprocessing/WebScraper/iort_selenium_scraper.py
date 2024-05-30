@@ -12,7 +12,7 @@ from Source.paths import *
 from Source.Logging import loggers
 from time import sleep
 from datetime import datetime
-from Source.Database_API.db_operations import DbLocalManager
+from Source.Database_Client.db_operations import DbLocalManager
 from Source.Indexing_data.document_processor import load_database
 
 
