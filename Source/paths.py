@@ -25,7 +25,10 @@ jotr_json_config = os.path.join(source_folder_path, "DataCollectionNPreprocessin
 
 # OLDP
 ###########
+pretrained_classifiers_folder = os.path.join(source_folder_path, "3_Models\\pretrained_classifier")
 german_law_books = os.path.join(resources_folder_path, "German Law Books")
+annotations_folder = os.path.join(german_law_books, "Annotated_datasets")
+annotations_file = os.path.join(annotations_folder, "annotated_dataset.jsonl")
 
 
 #################
