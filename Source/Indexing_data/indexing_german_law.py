@@ -1,10 +1,9 @@
 from Source.Logging.loggers import get_logger
 from Source.Database_Client.Neo4J_Client import DBNeo4JManager
 from sentence_transformers import SentenceTransformer
-from Source import paths
+from Utils import paths
 import os
 import json
-import neo4j
 
 DEBUG = True
 

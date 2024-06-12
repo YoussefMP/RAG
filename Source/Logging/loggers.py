@@ -1,4 +1,4 @@
-from Source.paths import *
+from Utils.paths import *
 import logging
 
 

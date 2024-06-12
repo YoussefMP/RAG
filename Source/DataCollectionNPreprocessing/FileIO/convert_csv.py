@@ -1,6 +1,6 @@
 from pyarabic import araby
 from nltk.tokenize.treebank import TreebankWordDetokenizer
-from Source.paths import *
+from Utils.paths import *
 from nltk.tokenize import word_tokenize
 import csv
 import os

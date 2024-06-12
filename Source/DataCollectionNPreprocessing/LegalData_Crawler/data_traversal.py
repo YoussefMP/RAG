@@ -1,6 +1,6 @@
 import os
 import json
-from Source import paths
+from Utils import paths
 import re
 
 DEBUG = False

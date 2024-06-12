@@ -7,7 +7,7 @@ __DEBUG__ = True
 
 #########################################################################################################
 from Source.DataCollectionNPreprocessing.WebScraper.html_preprocessing import process_html_content
-from Source.DataCollectionNPreprocessing.FileIO.io_operations import save_node_as_document
+from Utils.io_operations import save_node_as_document
 from space_model_handler import PageNode
 from atlassian import Confluence
 from tqdm import tqdm

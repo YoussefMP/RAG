@@ -1,13 +1,16 @@
-import time
+from Utils.io_operations import load_jsonl_dataset
 from transformers import AdamW, get_linear_schedule_with_warmup, AutoTokenizer
-from data_processor import *
-from sequence_classifier import RobertaCRF
 from sklearn.metrics import classification_report
 from Source.Logging.loggers import get_logger
+from sequence_classifier import RobertaCRF
+from Utils.labels import *
 from sequence_labeler.utils import *
-import datetime
+from data_processor import *
 from tqdm import tqdm
+import datetime
+import time
 import gc
+
 
 CONFIG = {
     "OUTPUT_DIR": paths.pretrained_classifiers_folder,
@@ -16,20 +19,13 @@ CONFIG = {
     # "DEVICE": "cpu",
     "BATCH_SIZE": 8,
     "MAX_LENGTH": 256,
-    "NUM_CLASSES": 9,
+    "NUM_CLASSES": 2,
     "EPOCHS": 5,
     "LEARNING_RATE": 2e-5,
-    "VERSION": 0.2,
-    "Comment": "Fixed the alignment of tokens and labels"
+    "VERSION": "r0.5",
+    "Comment": "New annotation with longer sequence, more context",
+    "TRAINING_DATASET": "annotated_dataset_long.jsonl"
 }
-
-# Define the tag to ID mapping
-TAG2ID = {"Section": 5, "subsection": 6, "Ref": 1,
-          "Statue": 3, "Book": 2, "Line": 7,
-          "Regulation": 8, "Article": 4,
-          "O": 0
-          }
-ID2TAG = {v: k for k, v in TAG2ID.items()}
 TRAIN = True
 
 
@@ -109,7 +105,7 @@ def evaluate_model(model, dataloader, device):
 if __name__ == '__main__':
     # load training data from json file
     logger.info(f"Loading training data from json file: {paths.annotations_file}")
-    dataset = load_dataset(paths.annotations_file)
+    dataset = load_jsonl_dataset(os.path.join(paths.annotations_folder, CONFIG["TRAINING_DATASET"]))
 
     # Initialize the tokenizer
     logger.info(f"Initializing tokenizer")
@@ -133,15 +129,24 @@ if __name__ == '__main__':
     dataset = dataset.train_test_split(test_size=0.2)
     # initialize dataloaders
     logger.info(f"Initializing dataloaders")
-    train_dataloader = get_dataloaders(tokenizer, dataset["train"], CONFIG["BATCH_SIZE"], TAG2ID, CONFIG["MAX_LENGTH"])
-    eval_dataloader = get_dataloaders(tokenizer, dataset["test"], CONFIG["BATCH_SIZE"], TAG2ID, CONFIG["MAX_LENGTH"])
+    train_dataloader = get_dataloaders_with_labels(tokenizer,
+                                                   dataset["train"], CONFIG["BATCH_SIZE"],
+                                                   TAG2ID,
+                                                   CONFIG["MAX_LENGTH"]
+                                                   )
+    eval_dataloader = get_dataloaders_with_labels(tokenizer,
+                                                  dataset["test"],
+                                                  CONFIG["BATCH_SIZE"],
+                                                  TAG2ID,
+                                                  CONFIG["MAX_LENGTH"]
+                                                  )
 
     if TRAIN:
         losses = train(classifier, train_dataloader, CONFIG["DEVICE"], CONFIG["EPOCHS"], CONFIG["LEARNING_RATE"])
         logger.info(f"Saving trained model with config")
         torch.save(classifier, os.path.join(
             CONFIG["OUTPUT_DIR"],
-            f"{CONFIG['MODEL_NAME'].split('/')[1]}_v{str(CONFIG['VERSION'])}")
+            f"{CONFIG['MODEL_NAME'].split('/')[1]}_{CONFIG['VERSION']}")
                    )
         CONFIG["Losses"] = losses
         save_config(**CONFIG)

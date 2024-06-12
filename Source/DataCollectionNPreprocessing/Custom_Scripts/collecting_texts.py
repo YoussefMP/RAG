@@ -1,5 +1,5 @@
 from Source.DataCollectionNPreprocessing.FileIO.convert_csv import pre_clean,remove_table_of_content
-from Source.paths import *
+from Utils.paths import *
 
 jotr = True
 

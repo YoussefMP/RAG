@@ -8,7 +8,7 @@ V 1.0.0
 """
 
 from Source.DataCollectionNPreprocessing.FileIO import pdf_reader as PR
-from Source.paths import *
+from Utils.paths import *
 from Source.Logging import loggers
 from bs4 import BeautifulSoup
 import requests

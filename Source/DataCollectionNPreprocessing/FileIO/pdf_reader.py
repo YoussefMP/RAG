@@ -8,7 +8,7 @@ import os
 os.environ['PATH'] += os.pathsep + r'C:\Program Files\Tesseract-OCR'
 
 from Source.Logging.loggers import *
-from Source.paths import *
+from Utils.paths import *
 from pdf2image import convert_from_path
 import pytesseract
 import fitz

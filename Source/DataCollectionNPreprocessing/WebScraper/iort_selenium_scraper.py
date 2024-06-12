@@ -8,11 +8,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common import exceptions as selenium_exceptions
 import json
-from Source.paths import *
+from Utils.paths import *
 from Source.Logging import loggers
 from time import sleep
 from datetime import datetime
-from Source.Database_Client.db_operations import DbLocalManager
 from Source.Indexing_data.document_processor import load_database
 
 

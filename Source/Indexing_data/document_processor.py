@@ -4,7 +4,7 @@ from arabert.preprocess import ArabertPreprocessor
 from Source.Logging.loggers import get_logger
 from Source.Database_Client.db_operations import DbLocalManager, DBPineconeManager
 from Source.Indexing_data.embedding import generate_batch_embeddings, FOLDERS_IDS
-from Source.paths import *
+from Utils.paths import *
 from tqdm import tqdm
 import json
 

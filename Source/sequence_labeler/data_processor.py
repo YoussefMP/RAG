@@ -1,6 +1,4 @@
-import json
 import torch
-import pandas as pd
 from datasets import Dataset
 from torch.utils.data import DataLoader
 
@@ -31,10 +29,12 @@ def convert_to_word_level_annotations(text, entities):
 
     word_labels = ["O"] * len(words)
 
-    sorted_entities = sorted(entities, key=lambda x: x['label'] != 'Ref')
+    sorted_entities = sorted(entities, key=lambda x: x[2] != 'Ref')
 
     for entity in sorted_entities:
-        entity_start, entity_end, entity_label = entity["start_offset"], entity["end_offset"], entity["label"]
+        if entity[2] != "Ref":
+            continue
+        entity_start, entity_end, entity_label = entity[0], entity[1], entity[2]
         for idx, (start, end) in enumerate(word_offsets):
             if start >= entity_start and end <= entity_end:
                 word_labels[idx] = entity_label
@@ -48,7 +48,7 @@ def tokenize_and_align_labels(tokenizer, examples, tag2id, max_length):
     all_labels = []
     for i, text in enumerate(examples["text"]):
 
-        entities = examples["entities"][i]
+        entities = examples["label"][i]
         words, word_labels = convert_to_word_level_annotations(text, entities)
 
         # Tokenize the words
@@ -73,7 +73,7 @@ def tokenize_and_align_labels(tokenizer, examples, tag2id, max_length):
     return tokenized_inputs
 
 
-def get_dataloaders(tokenizer, dataset, batch_size, tag2id, max_length):
+def get_dataloaders_with_labels(tokenizer, dataset, batch_size, tag2id, max_length):
 
     # Apply the function to the dataset
     encoded_dataset = tokenize_and_align_labels(tokenizer, dataset, tag2id, max_length)
@@ -85,19 +85,10 @@ def get_dataloaders(tokenizer, dataset, batch_size, tag2id, max_length):
     return dataloader
 
 
-def load_dataset(file_path):
-    data = []
-    with open(file_path, "r", encoding='utf8') as file:
-        for line in file:
-            data.append(json.loads(line))
+def get_dataloader(dataset, batch_size):
 
-    # convert the data list into a dataframe
-    df = pd.DataFrame(data, columns=["id", "text", "entities"])
+    # Initialize dataloader
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    # Convert the DataFrame to a Dataset
-    dataset = Dataset.from_pandas(df)
-
-    return dataset
-
-
+    return dataloader
 

@@ -5,6 +5,8 @@ Script that handles all FileIO operation and some extras that will come later.
 import os
 import re
 import json
+import pandas as pd
+from datasets import Dataset
 
 
 #######################
@@ -51,6 +53,33 @@ def dump_to_json(path, content):
     with open(path, 'w', encoding='utf-8') as outfile:
         json.dump(content, outfile, ensure_ascii=False, indent=4)
     outfile.close()
+
+
+def dump_to_jsonl(path, content):
+
+    if not os.path.exists(path):
+        create_folder_and_subfolders(path)
+
+    with open(path, 'w', encoding="utf-8") as file:
+        for entry in content:
+            json.dump(entry, file, ensure_ascii=False)
+            file.write('\n')
+    file.close()
+
+
+def load_jsonl_dataset(file_path):
+    data = []
+    with open(file_path, "r", encoding='utf8') as file:
+        for line in file:
+            data.append(json.loads(line))
+
+    # convert the data list into a dataframe
+    df = pd.DataFrame(data, columns=["id", "text", "entities"])
+
+    # Convert the DataFrame to a Dataset
+    dataset = Dataset.from_pandas(df)
+
+    return dataset
 
 
 #######################

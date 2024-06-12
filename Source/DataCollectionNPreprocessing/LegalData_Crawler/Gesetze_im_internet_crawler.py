@@ -1,8 +1,8 @@
-from Source.DataCollectionNPreprocessing.FileIO.io_operations import dump_to_json
+from Utils.io_operations import dump_to_json
 import requests
 from Source.Logging.loggers import get_logger
 from bs4 import BeautifulSoup
-from Source import paths
+from Utils import paths
 import os
 
 
