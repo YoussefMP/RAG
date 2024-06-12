@@ -24,6 +24,11 @@ CONFIG = {
 
 
 def merge_intervals(intervals):
+    """
+    Merges overlapping intervals of same sequences into one single interval.
+    :param intervals:
+    :return:
+    """
     merged = []
     for start, end in sorted(intervals):
         if merged and merged[-1][1] >= start - 1:
@@ -58,6 +63,13 @@ def format_result(texts, input_ids, offset_mapping, predictions):
 
 
 def filter_predictions(predictions, confidences, threshold):
+    """
+    This method filters (replaces with 0) predictions that do not surpass a certain threshold of confidence.
+    :param predictions:
+    :param confidences:
+    :param threshold:
+    :return:
+    """
     filtered_predictions = []
     for preds, confs in zip(predictions, confidences):
         filtered_preds = []
@@ -74,6 +86,7 @@ def filter_predictions(predictions, confidences, threshold):
 
 def annotate_dataset(tokenizer, classifier, dataloader, max_length, device, threshold=None):
 
+    # logger.info(f"Annotating data with {threshold if threshold is not None else 'No Threshold filtering'}")
     # Transferring model to device
     classifier.to(device)
 
@@ -115,6 +128,7 @@ def annotate_dataset(tokenizer, classifier, dataloader, max_length, device, thre
 
             annotated_results.extend(results)
 
+            # every 200 batches write a file with the results
             processed_batches += 1
             if processed_batches % 200 == 0:
                 file_name = CONFIG['OUT_FILE'].replace(".jsonl", f"_{str(file_extension)}.jsonl")
@@ -124,11 +138,11 @@ def annotate_dataset(tokenizer, classifier, dataloader, max_length, device, thre
                 )
                 annotated_results = []
                 file_extension += 1
+                # logger.info(f"Saving the {file_extension} set of batches to file")
 
             # optimizing by emptying cache and collecting garbage
             gc.collect()
             torch.cuda.empty_cache()
-
 
         file_name = CONFIG['OUT_FILE'].replace(".jsonl", f"_{str(file_extension)}.jsonl")
         dump_to_jsonl(

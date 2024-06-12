@@ -43,7 +43,15 @@ def convert_to_word_level_annotations(text, entities):
 
 
 def tokenize_and_align_labels(tokenizer, examples, tag2id, max_length):
-
+    """
+    Tokenize and align the labels with the words!! not tokens. Aligning with tokens proved to be problematic, since the
+    annotations is at character level, so it was difficult to map characters to tokens.
+    :param tokenizer:
+    :param examples:
+    :param tag2id:
+    :param max_length:
+    :return:
+    """
     tokenized_inputs = tokenizer(examples["text"], truncation=True, padding='max_length', max_length=max_length)
     all_labels = []
     for i, text in enumerate(examples["text"]):
@@ -74,7 +82,15 @@ def tokenize_and_align_labels(tokenizer, examples, tag2id, max_length):
 
 
 def get_dataloaders_with_labels(tokenizer, dataset, batch_size, tag2id, max_length):
-
+    """
+    This generates a dataloader for datasets with true labels.
+    :param tokenizer:
+    :param dataset:
+    :param batch_size:
+    :param tag2id:
+    :param max_length:
+    :return:
+    """
     # Apply the function to the dataset
     encoded_dataset = tokenize_and_align_labels(tokenizer, dataset, tag2id, max_length)
     batch_encoding_dataset = BatchEncodingDataset(encoded_dataset.convert_to_tensors("pt"))

@@ -25,6 +25,13 @@ class RobertaCRF(nn.Module):
             return self.crf.decode(emissions, mask=attention_mask.byte())
 
     def predict_with_confidence(self, input_ids, attention_mask=None, device="cpu"):
+        """
+        This method is a forward pass, but it also returns the confidence scores for each label predicted.
+        :param input_ids:
+        :param attention_mask:
+        :param device:
+        :return:
+        """
         outputs = self.roberta(input_ids, attention_mask=attention_mask)
         sequence_output = self.dropout(outputs[0])
         emissions = self.hidden2tag(sequence_output)

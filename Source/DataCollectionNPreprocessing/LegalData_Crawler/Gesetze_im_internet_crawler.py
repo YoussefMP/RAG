@@ -139,7 +139,7 @@ def download_book_content(books):
 
 
 if __name__ == "__main__":
-    # BOOKS = ["bgb", "gg", "zpo", "stpo", "stgb"]
-    BOOKS = ["stgb"]
+    BOOKS = ["bgb", "gg", "zpo", "stpo"]#, "stgb"]
+    # BOOKS = ["stgb"]
 
     download_book_content(BOOKS)
