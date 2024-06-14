@@ -134,7 +134,7 @@ def download_book_content(books):
                 dict_iterator[article_title]["texts"] = handle_article_content(article_content)
                 dict_iterator[article_title]["url"] = book_base_url + f"/{href}"
 
-        book_file_path = os.path.join(paths.german_law_books, f"{book}.json")
+        book_file_path = os.path.join(paths.crawl_results_folder, f"{book}.json")
         dump_to_json(book_file_path, book_content)
 
 

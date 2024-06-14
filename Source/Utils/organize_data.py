@@ -60,4 +60,4 @@ def convert_export_to_import_format():
         dump_to_jsonl(file_name.split(".")[0] + "_import.jsonl", content)
 
 
-remove_training_data()
+convert_export_to_import_format()

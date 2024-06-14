@@ -104,7 +104,7 @@ def create_folder_and_subfolders(file_path):
         os.makedirs(dirname)
 
 
-def generate_child_file_path(path: str) ->str:
+def generate_child_file_path(path: str) -> str:
     """
     Creates a text file in the folder with the same name as the parent folder.
     :param path:
@@ -121,3 +121,5 @@ def list_folder_content(folder_path):
     else:
         print(f"Could not find Folder {folder_path}")
         return []
+
+

@@ -1,3 +1,4 @@
+import torch
 from torch import nn
 from torchcrf import CRF
 from transformers import AutoModel
@@ -13,7 +14,11 @@ class RobertaCRF(nn.Module):
         self.hidden2tag = nn.Linear(self.roberta.config.hidden_size, self.num_labels)
         self.crf = CRF(self.num_labels, batch_first=True)
 
-    def forward(self, input_ids, attention_mask=None, labels=None):
+    def forward(self, input_ids, attention_mask=None, labels=None, threshold=None):
+
+        if threshold:
+            return self.predict_with_confidence(input_ids, attention_mask, threshold)
+
         outputs = self.roberta(input_ids, attention_mask=attention_mask)
         sequence_output = self.dropout(outputs[0])
         emissions = self.hidden2tag(sequence_output)
@@ -24,12 +29,12 @@ class RobertaCRF(nn.Module):
         else:
             return self.crf.decode(emissions, mask=attention_mask.byte())
 
-    def predict_with_confidence(self, input_ids, attention_mask=None, device="cpu"):
+    def predict_with_confidence(self, input_ids, attention_mask, threshold):
         """
         This method is a forward pass, but it also returns the confidence scores for each label predicted.
         :param input_ids:
         :param attention_mask:
-        :param device:
+        :param threshold:
         :return:
         """
         outputs = self.roberta(input_ids, attention_mask=attention_mask)
@@ -37,18 +42,23 @@ class RobertaCRF(nn.Module):
         emissions = self.hidden2tag(sequence_output)
 
         predictions = self.crf.decode(emissions, mask=attention_mask.byte())
-        max_length = max([len(p) for p in predictions])
-        predictions = [p + [0] * (max_length - len(p)) for p in predictions]
+        # max_length = max([len(p) for p in predictions])
+        # predictions = [p + [0] * (max_length - len(p)) for p in predictions]
 
         # Compute softmax probabilities
         probabilities = F.softmax(emissions, dim=-1)
 
         # Extract the confidence for the predicted label for each token
-        confidences = []
+        confident_predictions = []
         for i, preds in enumerate(predictions):
-            token_confidences = []
+            prediction = []
             for j, pred in enumerate(preds):
-                token_confidences.append(probabilities[i, j, pred].item())
-            confidences.append(token_confidences)
+                if probabilities[i, j, pred].item() > threshold:
+                    prediction.append(pred)
+                elif threshold-0.04 < probabilities[i, j, pred].item() < threshold:
+                    prediction.append(9)  # Replace with uncertainty tag
+                else:
+                    prediction.append(0)  # Replace with a neutral tag or None
+            confident_predictions.append(prediction)
 
-        return predictions, confidences
+        return confident_predictions

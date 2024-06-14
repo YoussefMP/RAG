@@ -26,16 +26,16 @@ jotr_json_config = os.path.join(source_folder_path, "DataCollectionNPreprocessin
 ###########
 pretrained_classifiers_folder = os.path.join(source_folder_path, "3_Models/pretrained_classifier")
 german_law_books = os.path.join(resources_folder_path, "German Law Books")
+crawl_results_folder = os.path.join(german_law_books, "Books")
 extracted_refs_folder = os.path.join(german_law_books, "extracted_refs")
 annotations_folder = os.path.join(german_law_books, "Annotated_datasets")
-annotations_file = os.path.join(annotations_folder, "annotated_dataset_long.jsonl")
+annotations_file = os.path.join(annotations_folder, "annotated_dataset_long_import.jsonl")
 
 
 #################
 # Results #######
 #################
 model_output_folder = os.path.join(annotations_folder, "Models_output")
-
 
 
 #################

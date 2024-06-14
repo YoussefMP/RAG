@@ -4,7 +4,7 @@ from sklearn.metrics import classification_report
 from Source.Logging.loggers import get_logger
 from sequence_classifier import RobertaCRF
 from Utils.labels import *
-from sequence_labeler.utils import *
+from utils import *
 from data_processor import *
 from tqdm import tqdm
 import datetime
@@ -17,19 +17,42 @@ CONFIG = {
     "MODEL_NAME": 'FacebookAI/xlm-roberta-large',
     "DEVICE": torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'),
     # "DEVICE": "cpu",
-    "BATCH_SIZE": 8,
+    "BATCH_SIZE": 16,
     "MAX_LENGTH": 256,
     "NUM_CLASSES": 2,
     "EPOCHS": 5,
     "LEARNING_RATE": 2e-5,
-    "VERSION": "r0.5",
-    "Comment": "New annotation with longer sequence, more context",
-    "TRAINING_DATASET": "annotated_dataset_long.jsonl"
+    "VERSION": "v0.7",
+    "Comment": "Same as v0.6 but Dataset v3",
+    "TRAINING_DATASET": "annotated_dataset_long",
+    "EVAL": False,
+    "DATASET_VERSION": "v3",
+    "CHECKPOINT": [3],
 }
+
 TRAIN = True
 
-
 logger = get_logger("trainer_logger", "Training_logs.log")
+
+
+def save_model(model, loss_records, checkpoint=None):
+    logger.info(f"Saving trained model with config")
+    out_path = os.path.join(CONFIG["OUTPUT_DIR"],
+                            f"{CONFIG['MODEL_NAME'].split('/')[1]}_{CONFIG['VERSION']}"
+                            )
+    if not os.path.exists(out_path):
+        os.makedirs(out_path)
+
+    model_name = f"{CONFIG['MODEL_NAME'].split('/')[1]}_{CONFIG['VERSION']}"
+
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'num_labels': CONFIG["NUM_CLASSES"],
+        'model_name': model_name + f"_checkpoint{checkpoint}" if checkpoint else model_name
+    }, os.path.join(out_path, model_name + f"_checkpoint{checkpoint}"))
+
+    CONFIG["Losses"] = loss_records
+    save_config(out_path, **CONFIG)
 
 
 def train(model, dataloader, device, epochs, learning_rate):
@@ -72,6 +95,9 @@ def train(model, dataloader, device, epochs, learning_rate):
         )
         losses.append(avg_train_loss)
 
+        if epoch+1 in CONFIG["CHECKPOINT"] and epoch != epochs-1:
+            save_model(model, losses, checkpoint=epoch)
+
     return losses
 
 
@@ -105,8 +131,8 @@ def evaluate_model(model, dataloader, device):
 if __name__ == '__main__':
     # load training data from json file
     logger.info(f"Loading training data from json file: {paths.annotations_file}")
-    dataset = load_jsonl_dataset(os.path.join(paths.annotations_folder, CONFIG["TRAINING_DATASET"]))
-
+    dataset = load_jsonl_dataset(os.path.join(paths.annotations_folder,
+                                              f"{CONFIG['TRAINING_DATASET']}_{CONFIG['DATASET_VERSION']}.jsonl"))
     # Initialize the tokenizer
     logger.info(f"Initializing tokenizer")
     tokenizer = AutoTokenizer.from_pretrained(CONFIG["MODEL_NAME"])
@@ -125,31 +151,36 @@ if __name__ == '__main__':
     else:
         classifier = RobertaCRF(CONFIG["MODEL_NAME"], CONFIG["NUM_CLASSES"])
 
-    # Split dataset into train and validation sets (for demonstration)
-    dataset = dataset.train_test_split(test_size=0.2)
-    # initialize dataloaders
-    logger.info(f"Initializing dataloaders")
-    train_dataloader = get_dataloaders_with_labels(tokenizer,
-                                                   dataset["train"], CONFIG["BATCH_SIZE"],
-                                                   TAG2ID,
-                                                   CONFIG["MAX_LENGTH"]
-                                                   )
-    eval_dataloader = get_dataloaders_with_labels(tokenizer,
-                                                  dataset["test"],
-                                                  CONFIG["BATCH_SIZE"],
-                                                  TAG2ID,
-                                                  CONFIG["MAX_LENGTH"]
-                                                  )
+    if CONFIG["EVAL"]:
+        # Split dataset into train and validation sets (for demonstration)
+        dataset = dataset.train_test_split(test_size=0.2)
+        # initialize dataloaders
+        logger.info(f"Initializing dataloaders")
+        train_dataloader = get_dataloaders_with_labels(tokenizer,
+                                                       dataset["train"], CONFIG["BATCH_SIZE"],
+                                                       TAG2ID,
+                                                       CONFIG["MAX_LENGTH"]
+                                                       )
+        eval_dataloader = get_dataloaders_with_labels(tokenizer,
+                                                      dataset["test"],
+                                                      CONFIG["BATCH_SIZE"],
+                                                      TAG2ID,
+                                                      CONFIG["MAX_LENGTH"]
+                                                      )
+    else:
+        # initialize dataloaders
+        logger.info(f"Initializing dataloaders")
+        train_dataloader = get_dataloaders_with_labels(tokenizer,
+                                                       dataset, CONFIG["BATCH_SIZE"],
+                                                       TAG2ID,
+                                                       CONFIG["MAX_LENGTH"]
+                                                       )
 
     if TRAIN:
         losses = train(classifier, train_dataloader, CONFIG["DEVICE"], CONFIG["EPOCHS"], CONFIG["LEARNING_RATE"])
-        logger.info(f"Saving trained model with config")
-        torch.save(classifier, os.path.join(
-            CONFIG["OUTPUT_DIR"],
-            f"{CONFIG['MODEL_NAME'].split('/')[1]}_{CONFIG['VERSION']}")
-                   )
-        CONFIG["Losses"] = losses
-        save_config(**CONFIG)
+        save_model(classifier, losses)
 
-    logger.info(f"Evaluating trained model")
-    evaluate_model(classifier, eval_dataloader, CONFIG["DEVICE"])
+    if CONFIG["EVAL"]:
+        # logger.info(f"Evaluating trained model")
+        evaluate_model(classifier, eval_dataloader, CONFIG["DEVICE"])
+

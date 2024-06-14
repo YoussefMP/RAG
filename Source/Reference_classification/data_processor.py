@@ -17,6 +17,28 @@ class BatchEncodingDataset(Dataset):
         return len(self.batch_encoding['input_ids'])
 
 
+def print_labeled_sequece(tokenizer, input_ids, labels):
+    """extract the "1" labeled sequences from the input_ids and decode them with the tokenizer
+    :param tokenizer:
+    :param input_ids:
+    :param labels:
+    """
+    labeled_sequences = []
+    s = ""
+    for i in range(len(input_ids)):
+
+        if labels[i] == 1:
+            original_token = tokenizer.decode([input_ids[i]])
+            s += " " + original_token
+
+        elif labels[i] == 0:
+            if len(s) > 0:
+                labeled_sequences.append(s)
+                s = ""
+
+    print(labeled_sequences)
+
+
 def convert_to_word_level_annotations(text, entities):
     words = text.split()
     word_offsets = []
@@ -29,12 +51,12 @@ def convert_to_word_level_annotations(text, entities):
 
     word_labels = ["O"] * len(words)
 
-    sorted_entities = sorted(entities, key=lambda x: x[2] != 'Ref')
+    sorted_entities = sorted(entities, key=lambda x: x["label"] != 'Ref')
 
     for entity in sorted_entities:
-        if entity[2] != "Ref":
+        if entity["label"] != "Ref":
             continue
-        entity_start, entity_end, entity_label = entity[0], entity[1], entity[2]
+        entity_start, entity_end, entity_label = entity["start_offset"], entity["end_offset"], entity["label"]
         for idx, (start, end) in enumerate(word_offsets):
             if start >= entity_start and end <= entity_end:
                 word_labels[idx] = entity_label
@@ -56,7 +78,7 @@ def tokenize_and_align_labels(tokenizer, examples, tag2id, max_length):
     all_labels = []
     for i, text in enumerate(examples["text"]):
 
-        entities = examples["label"][i]
+        entities = examples["entities"][i]
         words, word_labels = convert_to_word_level_annotations(text, entities)
 
         # Tokenize the words
@@ -75,7 +97,10 @@ def tokenize_and_align_labels(tokenizer, examples, tag2id, max_length):
             else:
                 labels.append(tag2id[word_labels[word_id]])
 
+        print()
+        print_labeled_sequece(tokenizer, words_tokenized_inputs["input_ids"], labels)
         all_labels.append(labels)
+        print("________________________________________________________________")
 
     tokenized_inputs["labels"] = all_labels
     return tokenized_inputs
@@ -96,7 +121,7 @@ def get_dataloaders_with_labels(tokenizer, dataset, batch_size, tag2id, max_leng
     batch_encoding_dataset = BatchEncodingDataset(encoded_dataset.convert_to_tensors("pt"))
 
     # Initialize dataloader
-    dataloader = DataLoader(batch_encoding_dataset, batch_size=batch_size)
+    dataloader = DataLoader(batch_encoding_dataset, batch_size=batch_size, shuffle=True )
 
     return dataloader
 
@@ -104,7 +129,7 @@ def get_dataloaders_with_labels(tokenizer, dataset, batch_size, tag2id, max_leng
 def get_dataloader(dataset, batch_size):
 
     # Initialize dataloader
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
     return dataloader
 

@@ -1,4 +1,5 @@
 from Source.Utils.io_operations import load_text_file_content_as_list
+from sequence_classifier import RobertaCRF
 from data_processor import get_dataloader
 from transformers import AutoTokenizer
 from collections import defaultdict
@@ -14,12 +15,13 @@ import gc
 CONFIG = {
     "MODEL_LINK": "FacebookAI/xlm-roberta-large",
     "MODEL_NAME": "xlm-roberta-large",
-    "VERSION": "r0.5",
+    "VERSION": "v0.7",
     "BATCH_SIZE": 8,
     "MAX_LENGTH": 256,
     "DEVICE": torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'),
     # "DEVICE": "cpu",
-    "OUT_FILE": "ref_annotations_r0.5_t0.95.jsonl",
+    "OUT_FILE": f"ref_annotations_r0.5_t0.95.jsonl",
+    "THRESHOLD": 0.95
 }
 
 
@@ -84,6 +86,13 @@ def filter_predictions(predictions, confidences, threshold):
     return filtered_predictions
 
 
+def reset_hidden_state(model):
+    # Reset the hidden state if using RNNs/LSTMs/GRUs
+    for layer in model.children():
+        if hasattr(layer, 'reset_hidden_state'):
+            layer.reset_hidden_state()
+
+
 def annotate_dataset(tokenizer, classifier, dataloader, max_length, device, threshold=None):
 
     # logger.info(f"Annotating data with {threshold if threshold is not None else 'No Threshold filtering'}")
@@ -111,26 +120,21 @@ def annotate_dataset(tokenizer, classifier, dataloader, max_length, device, thre
             input_ids = torch.tensor(tokenized_input.input_ids).to(device)
             attention_mask = torch.tensor(tokenized_input.attention_mask).to(device)
 
-            if threshold:
-                output, confidence = classifier.predict_with_confidence(input_ids, attention_mask, device)
-                output = filter_predictions(output, confidence, threshold=threshold)
-            else:
-                output = classifier(input_ids, attention_mask)
+            output = classifier(input_ids, attention_mask, threshold=threshold)
 
             predictions.extend(output)
 
-            results = format_result(
-                batch,
-                tokenized_input.input_ids,
-                tokenized_input.offset_mapping,
-                predictions
-            )
+            results = format_result(batch,
+                                    tokenized_input.input_ids,
+                                    tokenized_input.offset_mapping,
+                                    predictions
+                                    )
 
             annotated_results.extend(results)
 
             # every 200 batches write a file with the results
             processed_batches += 1
-            if processed_batches % 200 == 0:
+            if processed_batches % 50 == 0:
                 file_name = CONFIG['OUT_FILE'].replace(".jsonl", f"_{str(file_extension)}.jsonl")
                 dump_to_jsonl(
                     os.path.join(os.path.join(paths.model_output_folder, CONFIG["VERSION"]), file_name),
@@ -139,10 +143,6 @@ def annotate_dataset(tokenizer, classifier, dataloader, max_length, device, thre
                 annotated_results = []
                 file_extension += 1
                 # logger.info(f"Saving the {file_extension} set of batches to file")
-
-            # optimizing by emptying cache and collecting garbage
-            gc.collect()
-            torch.cuda.empty_cache()
 
         file_name = CONFIG['OUT_FILE'].replace(".jsonl", f"_{str(file_extension)}.jsonl")
         dump_to_jsonl(
@@ -157,17 +157,18 @@ if __name__ == "__main__":
     model_name = f"{CONFIG['MODEL_NAME']}_{CONFIG['VERSION']}"
 
     # initialize model
-    CLASSIFIER = torch.load(os.path.join(paths.pretrained_classifiers_folder, model_name))
+    models_path = os.path.join(paths.pretrained_classifiers_folder, model_name, model_name)
+    checkpoint = torch.load(models_path)
+    CLASSIFIER = RobertaCRF(model_name=CONFIG['MODEL_NAME'], num_labels=checkpoint['num_labels'])
+    CLASSIFIER.load_state_dict(checkpoint['model_state_dict'])
 
-    # files_names = list_folder_content(paths.extracted_refs_folder)
-    # TEXTS = []
-    #
-    # for filename in files_names:
-    #     TEXTS += load_text_file_content_as_list(os.path.join(paths.extracted_refs_folder, filename))
+    # CLASSIFIER = torch.load(os.path.join(paths.pretrained_classifiers_folder, model_name, model_name))
 
-    TEXTS = load_text_file_content_as_list(os.path.join(paths.extracted_refs_folder, "refs_dataset_without_training.txt"))
+    TEXTS = load_text_file_content_as_list(os.path.join(paths.extracted_refs_folder, "refs_dataset.txt"))
     DATALOADER = get_dataloader(TEXTS, CONFIG["BATCH_SIZE"])
 
-    annotate_dataset(TOKENIZER, CLASSIFIER, DATALOADER, CONFIG["MAX_LENGTH"], CONFIG['DEVICE'], threshold=0.96)
-
-
+    annotate_dataset(TOKENIZER, CLASSIFIER, DATALOADER,
+                     CONFIG["MAX_LENGTH"],
+                     CONFIG['DEVICE'],
+                     threshold=CONFIG["THRESHOLD"]
+                     )

@@ -53,13 +53,13 @@ def load_database():
 
 
 def load_data():
-    files = list(os.listdir(paths.german_law_books))
+    files = list(os.listdir(paths.crawl_results_folder))
 
     if DEBUG:
         files = files[:1]
 
     for file in files:
-        json_data = json.load(open(os.path.join(paths.german_law_books, file), "r", encoding="utf-8"))
+        json_data = json.load(open(os.path.join(paths.crawl_results_folder, file), "r", encoding="utf-8"))
 
         yield json_data
 
