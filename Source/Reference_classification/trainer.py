@@ -25,12 +25,12 @@ CONFIG = {
     "VERSION": "v0.7",
     "Comment": "Same as v0.6 but Dataset v3",
     "TRAINING_DATASET": "annotated_dataset_long",
-    "EVAL": False,
+    "EVAL": True,
     "DATASET_VERSION": "v3",
     "CHECKPOINT": [3],
 }
 
-TRAIN = True
+TRAIN = False
 
 logger = get_logger("trainer_logger", "Training_logs.log")
 
@@ -142,18 +142,22 @@ if __name__ == '__main__':
     # if model version already exits load it for evaluation
     if os.path.exists(os.path.join(
             CONFIG["OUTPUT_DIR"],
-            f"{CONFIG['MODEL_NAME'].split('/')[1]}_v{str(CONFIG['VERSION'])}")):
+            f"{CONFIG['MODEL_NAME'].split('/')[1]}_{str(CONFIG['VERSION'])}")):
         logger.info(f"Loading pretrained model Weights {CONFIG['MODEL_NAME']} version {CONFIG['VERSION']}")
-        classifier = torch.load(
-            os.path.join(CONFIG["OUTPUT_DIR"], f"{CONFIG['MODEL_NAME'].split('/')[1]}_v{str(CONFIG['VERSION'])}")
-        )
+
+        checkpoint = torch.load(os.path.join(CONFIG["OUTPUT_DIR"],
+                                             f"{CONFIG['MODEL_NAME'].split('/')[1]}_{str(CONFIG['VERSION'])}",
+                                             f"{CONFIG['MODEL_NAME'].split('/')[1]}_{str(CONFIG['VERSION'])}"))
+        classifier = RobertaCRF(model_name=CONFIG['MODEL_NAME'], num_labels=checkpoint['num_labels'])
+        classifier.load_state_dict(checkpoint['model_state_dict'])
+
         TRAIN = False
     else:
         classifier = RobertaCRF(CONFIG["MODEL_NAME"], CONFIG["NUM_CLASSES"])
 
     if CONFIG["EVAL"]:
         # Split dataset into train and validation sets (for demonstration)
-        dataset = dataset.train_test_split(test_size=0.2)
+        dataset = dataset.train_test_split(test_size=0.4)
         # initialize dataloaders
         logger.info(f"Initializing dataloaders")
         train_dataloader = get_dataloaders_with_labels(tokenizer,
@@ -181,6 +185,6 @@ if __name__ == '__main__':
         save_model(classifier, losses)
 
     if CONFIG["EVAL"]:
-        # logger.info(f"Evaluating trained model")
+        logger.info(f"Evaluating trained model")
         evaluate_model(classifier, eval_dataloader, CONFIG["DEVICE"])
 

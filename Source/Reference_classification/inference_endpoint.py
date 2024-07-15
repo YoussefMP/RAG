@@ -9,18 +9,17 @@ from Utils.labels import *
 from tqdm import tqdm
 from torch import torch
 import os
-import gc
 
 
 CONFIG = {
     "MODEL_LINK": "FacebookAI/xlm-roberta-large",
     "MODEL_NAME": "xlm-roberta-large",
     "VERSION": "v0.7",
-    "BATCH_SIZE": 8,
+    "BATCH_SIZE": 3,
     "MAX_LENGTH": 256,
     "DEVICE": torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'),
     # "DEVICE": "cpu",
-    "OUT_FILE": f"ref_annotations_r0.5_t0.95.jsonl",
+    "OUT_FILE": "ref_annotations_{}_t{}_{}.jsonl",
     "THRESHOLD": 0.95
 }
 
@@ -101,13 +100,13 @@ def annotate_dataset(tokenizer, classifier, dataloader, max_length, device, thre
 
     # Evaluation
     classifier.eval()
-    predictions = []
 
     annotated_results = []
     with torch.no_grad():
         processed_batches = 0
         file_extension = 0
         for batch in tqdm(dataloader):
+            predictions = []
             batch = [line.rstrip() for line in batch]
             tokenized_input = tokenizer.batch_encode_plus(batch,
                                                           add_special_tokens=True,
@@ -135,7 +134,7 @@ def annotate_dataset(tokenizer, classifier, dataloader, max_length, device, thre
             # every 200 batches write a file with the results
             processed_batches += 1
             if processed_batches % 50 == 0:
-                file_name = CONFIG['OUT_FILE'].replace(".jsonl", f"_{str(file_extension)}.jsonl")
+                file_name = CONFIG['OUT_FILE'].format(CONFIG["VERSION"], CONFIG["THRESHOLD"], file_extension)
                 dump_to_jsonl(
                     os.path.join(os.path.join(paths.model_output_folder, CONFIG["VERSION"]), file_name),
                     annotated_results
@@ -144,7 +143,7 @@ def annotate_dataset(tokenizer, classifier, dataloader, max_length, device, thre
                 file_extension += 1
                 # logger.info(f"Saving the {file_extension} set of batches to file")
 
-        file_name = CONFIG['OUT_FILE'].replace(".jsonl", f"_{str(file_extension)}.jsonl")
+        file_name = CONFIG['OUT_FILE'].format(CONFIG["VERSION"], CONFIG["THRESHOLD"], file_extension)
         dump_to_jsonl(
             os.path.join(os.path.join(paths.model_output_folder, CONFIG["VERSION"]), file_name),
             annotated_results

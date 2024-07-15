@@ -97,10 +97,10 @@ def tokenize_and_align_labels(tokenizer, examples, tag2id, max_length):
             else:
                 labels.append(tag2id[word_labels[word_id]])
 
-        print()
-        print_labeled_sequece(tokenizer, words_tokenized_inputs["input_ids"], labels)
+        # print()
+        # print_labeled_sequece(tokenizer, words_tokenized_inputs["input_ids"], labels)
         all_labels.append(labels)
-        print("________________________________________________________________")
+        # print("________________________________________________________________")
 
     tokenized_inputs["labels"] = all_labels
     return tokenized_inputs
@@ -121,7 +121,7 @@ def get_dataloaders_with_labels(tokenizer, dataset, batch_size, tag2id, max_leng
     batch_encoding_dataset = BatchEncodingDataset(encoded_dataset.convert_to_tensors("pt"))
 
     # Initialize dataloader
-    dataloader = DataLoader(batch_encoding_dataset, batch_size=batch_size, shuffle=True )
+    dataloader = DataLoader(batch_encoding_dataset, batch_size=batch_size, shuffle=True)
 
     return dataloader
 
