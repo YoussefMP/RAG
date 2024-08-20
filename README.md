@@ -8,9 +8,11 @@
 <img alt="PyPI - PyToch Version" src="https://img.shields.io/badge/PyTorch-1.11.0-blue">
 <img alt="PyPI - PyToch Version" src="https://img.shields.io/badge/Selenium-4.17-blue">
 <img alt="PyPI - PyToch Version" src="https://img.shields.io/badge/PostGreSQL-Orange">
-<img alt="PyPI - PyToch Version" src="https://img.shields.io/badge/Docker-Orange">
+<img alt="PyPI - PyToch Version" src="https://img.shields.io/badge/Docker-1C90ED">
 <img alt="PyPI - PyToch Version" src="https://img.shields.io/badge/Nginx-Orange">
+<img alt="PyPI - PyToch Version" src="https://img.shields.io/badge/Transformers-yellow">
 </div>
+
 
 The term <b>"RAG"</b> in the context you described indeed stands for "Retrieval Augmented Generation."
 
@@ -29,3 +31,8 @@ information present in a document database. This approach can be valuable for ta
 
 <h2>The Idea</h2>
 The goal of this project is to offer an AI Assistant that can offer legal information 
+
+<h3> The first steps </h3>
+The first milestone is to build a Database from which the model will retrieve the information. For the Database I decided on Neo4j. I think using a knowledge graph will yield a better performance.
+The knowledge graph will contain multiple sources for law texts, initially texts from books available on https://www.gesetze-im-internet.de/, with the intent of growing the knowledge base later on. The knowledge graph will also model the relations between the different law texts (i.e. the reference of law texts to others).
+To achieve this goal two ML models have been trained on manually annotated datasets to classify and extract reference from the text. The models weights and the training methods will soon be made available as well as the dataset. 
