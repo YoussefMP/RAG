@@ -74,7 +74,7 @@ def load_jsonl_dataset(file_path):
             data.append(json.loads(line))
 
     # convert the data list into a dataframe
-    df = pd.DataFrame(data, columns=["id", "text", "entities"])
+    df = pd.DataFrame(data, columns=["id", "text", "entities", "relations"])
 
     # Convert the DataFrame to a Dataset
     dataset = Dataset.from_pandas(df)

@@ -1,8 +1,8 @@
 from Utils.io_operations import load_jsonl_dataset
 from transformers import AdamW, get_linear_schedule_with_warmup, AutoTokenizer
+from sequence_classifier import RobertaCRF, RefDissassembler
 from sklearn.metrics import classification_report
 from Source.Logging.loggers import get_logger
-from sequence_classifier import RobertaCRF
 from Utils.labels import *
 from utils import *
 from data_processor import *
@@ -17,20 +17,22 @@ CONFIG = {
     "MODEL_NAME": 'FacebookAI/xlm-roberta-large',
     "DEVICE": torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'),
     # "DEVICE": "cpu",
-    "BATCH_SIZE": 16,
+    "BATCH_SIZE": 8,
     "MAX_LENGTH": 256,
-    "NUM_CLASSES": 2,
+    "NUM_CLASSES": 9,
+    "NUM_RELATIONS": 1,
     "EPOCHS": 5,
     "LEARNING_RATE": 2e-5,
-    "VERSION": "v0.8",
-    "Comment": "Same as v0.6 but Dataset v3",
-    "TRAINING_DATASET": "annotated_dataset_long",
+    "VERSION": "Disassembler_v1.0",
+    "Comment": "Dataset with relation annotations. Updated labels.",
+    "TRAINING_DATASET": "Annotated_dataset",
     "EVAL": False,
-    "DATASET_VERSION": "vt3",
-    "CHECKPOINT": [3],
+    "SPLIT_SIZE": 0.4,
+    "DATASET_VERSION": "VRT5.2",
+    "CHECKPOINT": [],
 }
 
-TRAIN = False
+TRAIN = True
 
 logger = get_logger("trainer_logger", "Training_logs.log")
 
@@ -77,7 +79,18 @@ def train(model, dataloader, device, epochs, learning_rate):
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
             labels = batch['labels'].to(device)
-            loss = model(input_ids, attention_mask, labels)
+
+            # Removing the padding from the relations and flattening the labels
+            relations = batch["relations"]
+            relations = relations.tolist()
+            processed_rel_batch = []
+            for ex_relations in relations:
+                if -1 in ex_relations:
+                    processed_rel_batch += ex_relations[:ex_relations.index(-1)]
+                else:
+                    processed_rel_batch += ex_relations
+
+            loss = model(input_ids, attention_mask, labels, processed_rel_batch)
             total_loss += loss.item()
             logger.info(f'\t\t\tTotal loss for batch : {total_loss}')
             loss.backward()
@@ -95,7 +108,7 @@ def train(model, dataloader, device, epochs, learning_rate):
         )
         losses.append(avg_train_loss)
 
-        if epoch+1 in CONFIG["CHECKPOINT"] and epoch != epochs-1:
+        if epoch + 1 in int(CONFIG["CHECKPOINT"]) and epoch != epochs-1:
             save_model(model, losses, checkpoint=epoch)
 
     return losses
@@ -107,14 +120,23 @@ def evaluate_model(model, dataloader, device):
     # Evaluation
     model.eval()
     predictions, true_labels = [], []
+    predictions_rel, true_rel = [], []
     with torch.no_grad():
         for batch in tqdm(dataloader, total=len(dataloader), desc=f"Evaluation "):
             input_ids = batch['input_ids'].to(device)
             attention_mask = batch['attention_mask'].to(device)
             labels = batch['labels'].to(device)
-            output = model(input_ids, attention_mask)
-            predictions.extend(output)
-            true_labels.extend([labels[i].tolist()[:len(o)] for i, o in enumerate(output)])
+
+            relations = batch['relations'].to(device)
+
+            output_ref, output_rel = model(input_ids, attention_mask)
+
+            # Taking care of the labeling
+            predictions.extend(output_ref)
+            true_labels.extend([labels[i].tolist()[:len(o)] for i, o in enumerate(output_ref)])
+
+            predictions.extend(output_rel)
+            true_rel.extend([relations[i].tolist()[:len(o)]] for i, o in enumerate(output_rel))
 
     # Convert predictions and labels to tag names
     pred_tags = [[ID2TAG[id] for id in pred] for pred in predictions]
@@ -148,41 +170,46 @@ if __name__ == '__main__':
         checkpoint = torch.load(os.path.join(CONFIG["OUTPUT_DIR"],
                                              f"{CONFIG['MODEL_NAME'].split('/')[1]}_{str(CONFIG['VERSION'])}",
                                              f"{CONFIG['MODEL_NAME'].split('/')[1]}_{str(CONFIG['VERSION'])}"))
-        classifier = RobertaCRF(model_name=CONFIG['MODEL_NAME'], num_labels=checkpoint['num_labels'])
+        classifier = RefDissassembler(model_name=CONFIG['MODEL_NAME'], num_labels=checkpoint['num_labels'],
+                                      num_relations=checkpoint['num_relations']
+                                      )
         classifier.load_state_dict(checkpoint['model_state_dict'])
+
         TRAIN = False
     else:
-        classifier = RobertaCRF(CONFIG["MODEL_NAME"], CONFIG["NUM_CLASSES"])
-        TRAIN = True
+        classifier = RefDissassembler(CONFIG["MODEL_NAME"], CONFIG["NUM_CLASSES"], CONFIG["NUM_RELATIONS"])
 
     if CONFIG["EVAL"]:
         # Split dataset into train and validation sets (for demonstration)
-        dataset = dataset.train_test_split(test_size=0.4)
+        dataset = dataset.train_test_split(test_size=CONFIG["SPLIT_SIZE"])
         # initialize dataloaders
         logger.info(f"Initializing dataloaders")
-        train_dataloader = get_dataloaders_with_labels(tokenizer,
-                                                       dataset["train"], CONFIG["BATCH_SIZE"],
-                                                       TAG2ID,
-                                                       CONFIG["MAX_LENGTH"]
-                                                       )
-        eval_dataloader = get_dataloaders_with_labels(tokenizer,
-                                                      dataset["test"],
-                                                      CONFIG["BATCH_SIZE"],
-                                                      TAG2ID,
-                                                      CONFIG["MAX_LENGTH"]
-                                                      )
+        train_dataloader = get_dataloaders_with_labels_and_relations(tokenizer,
+                                                                     dataset["train"], CONFIG["BATCH_SIZE"],
+                                                                     TAG2ID,
+                                                                     CONFIG["MAX_LENGTH"]
+                                                                     )
+
+        eval_dataloader = (get_dataloaders_with_labels_and_relations(tokenizer,
+                                                                     dataset["test"],
+                                                                     CONFIG["BATCH_SIZE"],
+                                                                     TAG2ID,
+                                                                     CONFIG["MAX_LENGTH"]
+                                                                     )
+                           )
     else:
         # initialize dataloaders
         logger.info(f"Initializing dataloaders")
-        train_dataloader = get_dataloaders_with_labels(tokenizer,
-                                                       dataset, CONFIG["BATCH_SIZE"],
-                                                       TAG2ID,
-                                                       CONFIG["MAX_LENGTH"]
-                                                       )
+        train_dataloader = get_dataloaders_with_labels_and_relations(tokenizer,
+                                                                     dataset, CONFIG["BATCH_SIZE"],
+                                                                     TAG2ID,
+                                                                     CONFIG["MAX_LENGTH"]
+                                                                     )
+        eval_dataloader = None
 
     if TRAIN:
-        losses = train(classifier, train_dataloader, CONFIG["DEVICE"], CONFIG["EPOCHS"], CONFIG["LEARNING_RATE"])
-        save_model(classifier, losses)
+        loss_record = train(classifier, train_dataloader, CONFIG["DEVICE"], CONFIG["EPOCHS"], CONFIG["LEARNING_RATE"])
+        save_model(classifier, loss_record)
 
     if CONFIG["EVAL"]:
         logger.info(f"Evaluating trained model")
