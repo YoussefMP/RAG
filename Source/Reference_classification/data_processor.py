@@ -2,6 +2,7 @@ import torch
 from datasets import Dataset
 from torch.utils.data import DataLoader
 from Utils.labels import TAG2ID, POSSIBLE_RELATIONS
+import matplotlib.pyplot as plt
 
 
 class BatchEncodingDataset():
@@ -52,16 +53,16 @@ def convert_to_word_level_annotations(text, entities) -> (list, list):
 
     word_labels = ["O"] * len(words)
 
-    # sorted_entities = sorted(entities, key=lambda x: x["label"] != 'Ref')
+    entities.sort(key=lambda e: e["start_offset"])
 
+    idx_offset = 0
     for entity in entities:
-        # if entity["label"] != "Ref":
-        #     continue
         entity_start, entity_end, entity_label = entity["start_offset"], entity["end_offset"], entity["label"]
-        for idx, (start, end) in enumerate(word_offsets):
+        for idx, (start, end) in enumerate(word_offsets[idx_offset:]):
             if start <= entity_end and end >= entity_start:
-                word_labels[idx] = entity_label
+                word_labels[idx+idx_offset] = entity_label
             elif entity_end < start:
+                idx_offset = idx
                 break
 
     return words, word_labels
@@ -84,15 +85,8 @@ def tokenize_and_align_labels(tokenizer, examples, tag2id, max_length, remove_re
     # TODO: convert too long examples into multiple examples
     # tokenized_inputs = tokenizer(examples["text"], truncation=True, padding='max_length', max_length=max_length)
     tokenized_inputs = tokenizer(examples["text"])
+
     all_labels = []
-
-
-    maxs = 0
-    for l in tokenized_inputs["input_ids"]:
-        maxs = max(len(l), maxs)
-
-    print(f"maxs = {maxs}")
-
     for i, text in enumerate(examples["text"]):
 
         entities = examples["entities"][i]
@@ -105,8 +99,8 @@ def tokenize_and_align_labels(tokenizer, examples, tag2id, max_length, remove_re
 
         # Tokenize the words
         words_tokenized_inputs = tokenizer(words,
-                                           truncation=True,
-                                           padding='max_length',
+                                           # truncation=True,
+                                           # padding='max_length',
                                            # max_length=max_length,
                                            is_split_into_words=True
                                            )
@@ -119,22 +113,30 @@ def tokenize_and_align_labels(tokenizer, examples, tag2id, max_length, remove_re
             else:
                 labels.append(tag2id[word_labels[word_id]])
 
-        el = [text[e["start_offset"]:e["end_offset"]] for e in entities]
-        print(el)
-        print(len(el))
-        s = ""
-        for i, l in enumerate(labels):
-            if l != 0:
-                s += tokenizer.convert_ids_to_tokens(words_tokenized_inputs["input_ids"][i])
-            else:
-                if s != "":
-                    print(s)
-                    s = ""
-        print()
-        print("________________________________________________________________")
-
         all_labels.append(labels)
 
+        # el = [text[e["start_offset"]:e["end_offset"]] for e in entities]
+        # print(el)
+        # print(len(el))
+        # s = ""
+        # ts = ""
+        #
+        # for i, l in enumerate(labels):
+        #     if l != 0:
+        #         s += tokenizer.convert_ids_to_tokens(words_tokenized_inputs["input_ids"][i])
+        #     else:
+        #         if s != "":
+        #             print(s)
+        #             ts += s
+        #             s = ""
+        # print()
+        #
+        #
+        # for pe in el:
+        #     if pe.replace(" ", "▁") not in ts:
+        #         print(f"cound not find {pe.replace(' ', '▁')}")
+        #         break
+        # print("________________________________________________________________")
 
     tokenized_inputs["labels"] = all_labels
     return tokenized_inputs

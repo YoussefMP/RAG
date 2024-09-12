@@ -16,7 +16,6 @@ CONFIG = {
     "OUTPUT_DIR": paths.pretrained_classifiers_folder,
     "MODEL_NAME": 'FacebookAI/xlm-roberta-large',
     "DEVICE": torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'),
-    # "DEVICE": "cpu",
     "BATCH_SIZE": 8,
     "MAX_LENGTH": 256,
     "NUM_CLASSES": 9,
@@ -28,7 +27,7 @@ CONFIG = {
     "TRAINING_DATASET": "Annotated_dataset",
     "EVAL": False,
     "SPLIT_SIZE": 0.4,
-    "DATASET_VERSION": "VRT5.2",
+    "DATASET_VERSION": "VR5.2",
     "CHECKPOINT": [],
 }
 
