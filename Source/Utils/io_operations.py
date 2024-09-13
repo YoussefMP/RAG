@@ -7,6 +7,51 @@ import re
 import json
 import pandas as pd
 from datasets import Dataset
+from Source.Utils import paths
+
+
+#######################
+# Folders Methods   ###
+#######################
+def list_folder_files(path, conditions=None):
+    """
+    :param path: path of the folder
+    :param conditions: list of strings that the file name has to contain to be returned
+    :return:
+    """
+    files = list(os.listdir(path))
+
+    if conditions:
+        filtered_list = []
+        for file in files:
+            valid = True
+            for condition in conditions:
+                if condition not in file:
+                    valid = False
+                    break
+
+            if valid:
+                filtered_list.append(file)
+    else:
+        return files
+
+    return filtered_list
+
+
+def list_files_as_paths(path, conditions=None):
+    """
+    This method returns the files but as a list of paths not just their names
+    :param path:
+    :param conditions:
+    :return:
+    """
+    files_paths = []
+    files = list_folder_files(path, conditions)
+
+    for file in files:
+        files_paths.append(os.path.join(path, file))
+
+    return files_paths
 
 
 #######################
@@ -18,8 +63,8 @@ def write_to_file(path: str, content: str):
     out_file.close()
 
 
-def load_text_file_content_as_list(out_path: str) -> list[str]:
-    with open(out_path, 'r', encoding='utf-8') as outfile:
+def load_text_file_content_as_list(read_path: str) -> list[str]:
+    with open(read_path, 'r', encoding='utf-8') as outfile:
         content = outfile.readlines()
 
     return content

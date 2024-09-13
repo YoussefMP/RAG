@@ -2,11 +2,13 @@ import os
 import json
 from Utils import paths
 import re
+import csv
+
 
 DEBUG = False
 
 
-def load_json_books():
+def load_json_books(condition=None):
     """
     Returns the json files in which the law books are saved.
     :return:
@@ -86,17 +88,17 @@ def extract_sentences(data):
             for line in sentence["lines"]:
                 if "text" in list(line.keys()):
                     if check_for_ref(f"{data['text']} {sentence['text']} {line['text']}"):
-                        sentences.append(f"{data['text']} {sentence['text']} {line['text']}")
+                        sentences.append((len(data['text']), len(sentence["text"]), f"{data['text']} {sentence['text']} {line['text']}"))
 
                 elif "lines" in list(line.keys()):
                     for sub_line in line["lines"]:
                         if "text" in list(sub_line.keys()):
                             if check_for_ref(f"{data['text']} {sentence['text']} {line['text']} {sub_line['text']}"):
-                                sentences.append(f"{data['text']} {sentence['text']} {line['text']} {sub_line['text']}")
+                                sentences.append((len(data['text']), len(sentence["text"]), f"{data['text']} {sentence['text']} {line['text']} {sub_line['text']}"))
 
         else:
             if check_for_ref(f"{data['text']} {sentence['text']}"):
-                sentences.append(f"{data['text']} {sentence['text']}")
+                sentences.append((len(data['text']), len(sentence["text"]), f"{data['text']} {sentence['text']}"))
 
     return sentences
 
@@ -144,10 +146,22 @@ if __name__ == "__main__":
         references_dataset = extract_long_refs(book, "", 0, [])
         print(f"Extracted {len(references_dataset)} references from {title}")
 
-        result_file_path = os.path.join(paths.german_law_books, f"extracted_refs_{title.replace('.json', '')}.txt")
-        with open(result_file_path, "w", encoding="utf-8") as f:
-            for text in references_dataset:
-                f.write(f"{text}\n")
-        f.close()
+        # result_file_path = os.path.join(paths.german_law_books, f"extracted_refs_{title.replace('.json', '')}.txt")
+        # with open(result_file_path, "w", encoding="utf-8") as f:
+        #     for text in references_dataset:
+        #         f.write(f"{text}\n")
+        # f.close()
 
+        # Save to CSV file
+        result_file_path = os.path.join(paths.german_law_books, f"extracted_refs_{title.replace('.json', '')}.csv")
+        with open(result_file_path, 'w', newline="", encoding="utf-8") as csvfile:
+            fieldnames = ['b_length', "s_length", 'text']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter="|")
+
+            # Write headers
+            writer.writeheader()
+
+            # Write data
+            for row in references_dataset:
+                writer.writerow({'b_length': row[0], "s_length": row[1], 'text': row[2]})
 
