@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from torch.nn import BCEWithLogitsLoss
-from Utils.labels import TAG2ID, POSSIBLE_RELATIONS
+from Source.Utils.labels import TAG2ID, POSSIBLE_RELATIONS
 from torchcrf import CRF
 from transformers import AutoModel
 import torch.nn.functional as F

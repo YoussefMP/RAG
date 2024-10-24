@@ -1,4 +1,4 @@
-from Utils.paths import *
+from Source.Utils.paths import *
 import logging
 
 loggers = {}
