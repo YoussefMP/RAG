@@ -1,10 +1,17 @@
 import csv
 from transformers import AutoTokenizer
 from Source.Utils.io_operations import list_files_as_paths, load_text_file_content_as_list
-from Source.Utils.io_operations import load_jsonl_dataset
+from Source.Utils.io_operations import load_jsonl_dataset, dump_to_jsonl
 from Source.Utils import paths
 import matplotlib.pyplot as plt
+import json
 import os
+
+
+# Took it manually from Dataset VR5.2
+START_ID = 37570
+E_START_ID = 200000
+R_START_ID = 5847
 
 
 def bar_plot(x, y):
@@ -23,6 +30,100 @@ def bar_plot(x, y):
 
     # Show the plot
     plt.show()
+
+
+def replace_examples(old_data, new_data, mapping):
+    global START_ID
+    global E_START_ID
+    global R_START_ID
+    
+    res = []
+
+    for entry in old_data:
+
+        old_text = entry["text"]
+        entry["entities"].sort(key=lambda entity: entity["start_offset"])
+
+        if entry["id"] in mapping:
+            
+            for coordinates in mapping[entry["id"]]:
+                entities_mapping = {}
+                new_entry = {"id": START_ID, "text": "", "comments": [], "entities": [], "relations": []}
+                START_ID += 1
+
+                new_text = new_data[coordinates[0]][coordinates[1]-2]["text"]
+                new_entry["text"] = new_text
+
+                annotated_parts = {}
+                for entity in entry["entities"]:
+                    if old_text[entity["start_offset"]:entity["end_offset"]] in new_text:
+
+                        start_offset_new_text = new_text.find(old_text[entity["start_offset"]:entity["end_offset"]])
+                        end_offset_new_text = start_offset_new_text + len(old_text[entity["start_offset"]:entity["end_offset"]])
+
+                        skip = False
+                        while (start_offset_new_text, end_offset_new_text) in annotated_parts:
+                            # check if the reference is mentioned again in the same text
+                            start_offset_new_text = new_text[end_offset_new_text:].find(old_text[entity["start_offset"]:entity["end_offset"]])
+                            if start_offset_new_text == -1:
+                                skip = True
+                                break
+
+                            start_offset_new_text += end_offset_new_text
+                            end_offset_new_text = start_offset_new_text + len(old_text[entity["start_offset"]:entity["end_offset"]])
+
+                        if skip:
+                            continue
+
+                        for key in annotated_parts.keys():
+                            if (key[0] <= start_offset_new_text and key[1] >= end_offset_new_text) or \
+                                    (start_offset_new_text <= key[0] and end_offset_new_text >= key[1]) or \
+                                    (key[0] == start_offset_new_text) or (key[1] == end_offset_new_text):
+
+                                if annotated_parts[key]["label"] == entity["label"]:
+                                    if end_offset_new_text-start_offset_new_text > key[1] - key[0]:
+                                        # remove the old entity
+                                        removed = False
+                                        for e in new_entry["entities"]:
+                                            if e["id"] == annotated_parts[key]["id"]:
+                                                new_entry["entities"].remove(e)
+                                                removed = True
+                                                # del entities_mapping[e["id"]]
+                                        if removed:
+                                            break
+                                        del annotated_parts[key]
+                                        break
+                                    else:
+                                        skip = True
+
+                        if skip:
+                            continue
+
+                        new_entry["entities"].append({"start_offset": start_offset_new_text,
+                                                      "end_offset": end_offset_new_text,
+                                                      "label": entity["label"],
+                                                      "id": E_START_ID})
+                        entities_mapping[entity["id"]] = E_START_ID
+
+                        annotated_parts[(start_offset_new_text, end_offset_new_text)] =\
+                            {"start_offset": start_offset_new_text,
+                             "end_offset": end_offset_new_text,
+                             "label": entity["label"],
+                             "id": E_START_ID
+                             }
+                        E_START_ID += 1
+
+                # for relation in entry["relations"]:
+                #     if relation["from_id"] in entities_mapping and relation["to_id"] in entities_mapping:
+                #         new_entry["relations"].append({
+                #             "from_id": entities_mapping[relation["from_id"]],
+                #             "to_id": entities_mapping[relation["to_id"]],
+                #             "type": relation["type"],
+                #         })
+
+                res.append(new_entry)
+
+    return res
 
 
 def compare_and_extract(old_data, new_data):
@@ -63,12 +164,14 @@ def compare_and_extract(old_data, new_data):
                     except Exception as e:
                         pass
 
-    # for k, v in res.items():
-    #     print(f"{len(v)} -> {k} -> {v}")
-    #
-    # print(len(res))
+    count = 0
+    for k, v in res.items():
+        print(f"{len(v)} -> {k} -> {v}")
+        count += len(v)
 
-    return True
+    print(f"Total matches: {count}")
+
+    return res
 
 
 if __name__ == '__main__':
@@ -82,9 +185,9 @@ if __name__ == '__main__':
 
     new_refs_files = list_files_as_paths(paths.german_law_books, [".csv"])
     new_refs_dataset = {}
-    
+
     length_data = {}
-    
+
     for file in new_refs_files:
         book = file[file.rfind("\\")+1:].replace("extracted_refs_", "").replace(".csv", "")
         new_refs_dataset[book] = []
@@ -100,7 +203,14 @@ if __name__ == '__main__':
                 #     length_data[len(tokens)] += 1
                 # else:
                 #     length_data[len(tokens)] = 1
-    
+
     # bar_plot(list(length_data.keys()), list(length_data.values()))
 
-    compare_and_extract(dataset, new_refs_dataset)
+    examples_to_replace = compare_and_extract(dataset, new_refs_dataset)
+    new_entries = replace_examples(dataset, new_refs_dataset, examples_to_replace)
+    
+    # Assuming new_entries is the list of dicts obtained from replace_examples function
+    dump_to_jsonl(os.path.join(paths.temp_files_path, "new_entries.jsonl"), new_entries)
+
+
+

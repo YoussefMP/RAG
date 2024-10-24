@@ -25,6 +25,7 @@ jotr_json_config = os.path.join(source_folder_path, "DataCollectionNPreprocessin
 # OLDP
 ###########
 pretrained_classifiers_folder = os.path.join(source_folder_path, "3_Models\\pretrained_classifier")
+trained_models_folder = os.path.join(source_folder_path, "3_Models\\Trained_Disassemblers")
 german_law_books = os.path.join(resources_folder_path, "German Law Books")
 crawl_results_folder = os.path.join(german_law_books, "Books")
 extracted_refs_folder = os.path.join(german_law_books, "extracted_refs")
@@ -48,3 +49,4 @@ log_files_folder = os.path.join(source_folder_path, "Logging/log_files")
 # Random ########
 #################
 test_folder = os.path.join(source_folder_path, "Tests")
+temp_files_path = os.path.join(german_law_books, "TempFiles")

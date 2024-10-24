@@ -3,9 +3,14 @@ from datasets import Dataset
 from torch.utils.data import DataLoader
 from Utils.labels import TAG2ID, POSSIBLE_RELATIONS
 import matplotlib.pyplot as plt
+from Source.Logging.loggers import get_logger
+
+# TODO: Load the Jsonl file directly into a Dataset object
+#         - Figure out the how the content of the jsonl file should look like
 
 
-class BatchEncodingDataset():
+# Class modelling the Dataset
+class BatchEncodingDataset:
     def __init__(self, batch_encoding):
         self.batch_encoding = batch_encoding
 
@@ -40,6 +45,10 @@ def print_labeled_sequence(tokenizer, input_ids, labels):
 
     print(labeled_sequences)
 
+
+#######################################################
+# Methods for getting the data in the right format ####
+#######################################################
 
 def convert_to_word_level_annotations(text, entities) -> (list, list):
     words = text.split()
@@ -83,60 +92,38 @@ def tokenize_and_align_labels(tokenizer, examples, tag2id, max_length, remove_re
                             - encodings {list: number of examples}
     """
     # TODO: convert too long examples into multiple examples
-    # tokenized_inputs = tokenizer(examples["text"], truncation=True, padding='max_length', max_length=max_length)
-    tokenized_inputs = tokenizer(examples["text"])
+    truncate = True if max_length is not None else False
+    pad = "max_length" if max_length is not None else True
+
+    tokenized_inputs = tokenizer(examples["text"], truncation=truncate, padding=pad, max_length=max_length)
+    # Split the examples into lists of words
+    split_examples = list(map(lambda s: s.split(), examples["text"]))
+    # Tokenize the words using the tokenizer for alignment with the labels
+    words_tokenized_inputs = tokenizer(split_examples,
+                                       truncation=truncate,
+                                       padding=pad,
+                                       max_length=max_length,
+                                       is_split_into_words=True
+                                       )
 
     all_labels = []
     for i, text in enumerate(examples["text"]):
 
         entities = examples["entities"][i]
-        if remove_refs:
-            entities = [entity for entity in entities if entity["label"] != "Ref"]
-        else:
+        if not remove_refs:
             entities = [entity for entity in entities if entity["label"] == "Ref"]
 
         words, word_labels = convert_to_word_level_annotations(text, entities)
+        word_ids = words_tokenized_inputs[i].word_ids
 
-        # Tokenize the words
-        words_tokenized_inputs = tokenizer(words,
-                                           # truncation=True,
-                                           # padding='max_length',
-                                           # max_length=max_length,
-                                           is_split_into_words=True
-                                           )
-        word_ids = words_tokenized_inputs.word_ids()
-
-        labels = []
-        for wi, word_id in enumerate(word_ids):
+        labels = [0]
+        for wi, word_id in enumerate(word_ids[1:]):
             if word_id is None:
-                labels.append(0)
-            else:
-                labels.append(tag2id[word_labels[word_id]])
+                labels += [0] * (len(word_ids) - len(labels))
+                break
+            labels.append(tag2id[word_labels[word_id]])
 
         all_labels.append(labels)
-
-        # el = [text[e["start_offset"]:e["end_offset"]] for e in entities]
-        # print(el)
-        # print(len(el))
-        # s = ""
-        # ts = ""
-        #
-        # for i, l in enumerate(labels):
-        #     if l != 0:
-        #         s += tokenizer.convert_ids_to_tokens(words_tokenized_inputs["input_ids"][i])
-        #     else:
-        #         if s != "":
-        #             print(s)
-        #             ts += s
-        #             s = ""
-        # print()
-        #
-        #
-        # for pe in el:
-        #     if pe.replace(" ", "▁") not in ts:
-        #         print(f"cound not find {pe.replace(' ', '▁')}")
-        #         break
-        # print("________________________________________________________________")
 
     tokenized_inputs["labels"] = all_labels
     return tokenized_inputs
@@ -201,6 +188,10 @@ def build_relation_matrix(entities, relations):
 
     return relation_matrices
 
+
+####################
+# Main Methods #####
+####################
 
 def get_dataloaders_with_labels(tokenizer, dataset, batch_size, tag2id, max_length):
     """

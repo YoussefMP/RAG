@@ -41,7 +41,8 @@ class RobertaCRF(nn.Module):
         emissions = self.hidden2tag(sequence_output)
 
         if labels is not None:
-            loss = -self.crf(emissions, labels, mask=attention_mask.byte(), reduction='mean')
+            # loss = -self.crf(emissions, labels, mask=attention_mask.byte(), reduction='mean')
+            loss = -self.crf(emissions, labels, mask=attention_mask.byte())
             return loss
         else:
             return self.crf.decode(emissions, mask=attention_mask.byte())
@@ -89,13 +90,14 @@ class RefDissassembler(RobertaCRF):
         self.relation_classifier_layer = torch.nn.Linear(self.roberta.config.hidden_size, num_relations)
         self.loss_fn = BCEWithLogitsLoss()
 
-    def forward(self, input_ids, attention_mask=None, labels=None, relations=None, threshold=None):
+    def forward(self, input_ids, attention_mask=None, labels=None, relations=None, threshold=None, r_threshold=0.5):
         """
         :param input_ids:
         :param attention_mask:
         :param labels:
         :param relations:
         :param threshold:
+        :param r_threshold:
         :return:
                     :outputs: Loss function for training and evaluation: Set (loss, crf_output, relation_logits)
                                 loss is the sum of the crf-loss + BCEWithLogitsLoss for the relation layer
@@ -110,19 +112,33 @@ class RefDissassembler(RobertaCRF):
         hidden_output = torch.nn.ReLU()(self.hidden2tag(sequence_output))
         decoded_crf = self.crf.decode(hidden_output, mask=attention_mask.byte())
 
-        span_pairs = self.get_spans_pairs(sequence_output, decoded_crf, labels)
-        relation_hidden = torch.nn.ReLU()(self.relation_hidden(span_pairs))
-        relation_logits = self.relation_classifier_layer(relation_hidden)
+        relation_logits = None
+        rel_predictions = None
+        if (labels is None and len(decoded_crf) > 1) or len(labels) > 1:
+            span_pairs = self.get_spans_pairs(sequence_output, decoded_crf, labels)
+            relation_hidden = torch.nn.ReLU()(self.relation_hidden(span_pairs))
+            relation_logits = self.relation_classifier_layer(relation_hidden)
+            rel_predictions_probs = torch.sigmoid(relation_logits)
+            rel_predictions = [1 if pred > r_threshold else 0 for pred in rel_predictions_probs]
 
-        if labels is not None:
+        if relations is not None:
+            if relation_logits is not None:
+                try:
+                    relation_loss = self.loss_fn(relation_logits,
+                                                 torch.tensor(relations, dtype=torch.float).unsqueeze(dim=1).to("cuda"))
+                except ValueError as err:
+                    print(err)
+
+            else:
+                relation_loss = torch.tensor(0.).unsqueeze(dim=1).to("cuda")
+
             # Removed the reduction parameter from the 'crf'-call for more granular token level fine-tuning
             loss = (-self.crf(hidden_output, labels, mask=attention_mask.byte()) +
-                    self.loss_fn(relation_logits,
-                                 torch.tensor(relations, dtype=torch.float).unsqueeze(dim=1).to("cuda"))
+                    relation_loss
                     )
-            return loss
+            return loss, relation_loss
 
-        return decoded_crf, relation_logits
+        return decoded_crf, rel_predictions
 
     def get_spans_pairs(self, sequence_output, decoded_crf, labels=None):
         """
@@ -136,7 +152,7 @@ class RefDissassembler(RobertaCRF):
         # initialize empty tensor to store the results
 
         pairs_batch = []
-        labels_to_use = labels if labels is not None else decoded_crf
+        labels_to_use = labels.tolist() if labels is not None else decoded_crf
 
         # This loop iterates the predicted labels or the golden truth of the batch
         for eid, predicted_labels in enumerate(labels_to_use):
@@ -144,7 +160,7 @@ class RefDissassembler(RobertaCRF):
             # this loop set the indices of the label spans
             borders = []
 
-            list_predicted_labels = predicted_labels.tolist()
+            list_predicted_labels = predicted_labels
             labels_in_order = [list_predicted_labels[0]]
             old_label = list_predicted_labels[0]
             for pid, predicted_label in enumerate(list_predicted_labels):
@@ -154,7 +170,7 @@ class RefDissassembler(RobertaCRF):
                     old_label = predicted_label
 
             # This returns each span embeddings
-            # spans_embeddings = list [ tuple (int, tensor[ float ]) ] tensor.shape = [span_length, hidden_size]
+            # spans_embeddings = list [ tuple (int, tensor[ float ]) ] // tensor.shape = [hidden_size, ]
             spans_embeddings = []
             for i, b in enumerate(borders):
                 current_label = labels_in_order[i]

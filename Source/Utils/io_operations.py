@@ -1,13 +1,14 @@
 """
 Script that handles all FileIO operation and some extras that will come later.
 """
-
 import os
 import re
+import csv
 import json
 import pandas as pd
 from datasets import Dataset
 from Source.Utils import paths
+import torch
 
 
 #######################
@@ -116,7 +117,10 @@ def load_jsonl_dataset(file_path):
     data = []
     with open(file_path, "r", encoding='utf8') as file:
         for line in file:
-            data.append(json.loads(line))
+            try:
+                data.append(json.loads(line))
+            except json.decoder.JSONDecodeError:
+                print(line)
 
     # convert the data list into a dataframe
     df = pd.DataFrame(data, columns=["id", "text", "entities", "relations"])
@@ -125,6 +129,30 @@ def load_jsonl_dataset(file_path):
     dataset = Dataset.from_pandas(df)
 
     return dataset
+
+
+def load_jsonl_dataset_as_list(file_path):
+    data = []
+    with open(file_path, "r", encoding='utf8') as file:
+        for line in file:
+            data.append(json.loads(line))
+    return data
+
+
+def write_refs_to_csv(path, references_dataset):
+    # Save to CSV file
+    result_file_path = path
+    with open(result_file_path, 'w', newline="", encoding="utf-8") as csvfile:
+        fieldnames = ['b_length', "s_length", 't_length', 'f_length', 'text']
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter="|")
+
+        # Write headers
+        writer.writeheader()
+
+        # Write data
+        for row in references_dataset:
+            writer.writerow({'b_length': row[0], "s_length": row[1], "t_length": row[2], "f_length": row[3],
+                             'text': row[4]})
 
 
 #######################
