@@ -1,10 +1,11 @@
 from transformers import AdamW, get_linear_schedule_with_warmup, AutoTokenizer
 from data_processor import get_dataloaders_with_labels_and_relations
 from sequence_classifier import RobertaCRF, RefDissassembler
-from Utils.io_operations import load_jsonl_dataset
+from Source.Utils.io_operations import load_jsonl_dataset
 from sklearn.metrics import classification_report
 from Source.Logging.loggers import get_logger
-from Utils.labels import *
+from Source.Utils.labels import *
+from Source.Utils import paths
 from utils import *
 from tqdm import tqdm
 import datetime

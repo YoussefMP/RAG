@@ -4,8 +4,6 @@ from Source.Utils.io_operations import load_jsonl_dataset
 from transformers import AutoTokenizer
 from Source.Utils.paths import *
 from Source.Utils.labels import *
-import torch
-import tqdm
 
 TEST_CONFIG = {
     "MODEL_NAME": "FacebookAI/xlm-roberta-large",
@@ -23,18 +21,16 @@ def test_span_pairs_generation(data, labels=None):
         # Removing the padding from the relations and flattening the labels
         relations = batch["relations"]
 
-        # generating random embeddings for testing
-        dummy_embeddings = torch.randn(len(input_ids), len(input_ids[0]), 16)
+        dummy_embeddings = classifier(input_ids)
+        generated_training_pairs = classifier.get_spans_pairs(dummy_embeddings, None, labels)
 
-        RefDissassembler.get_spans_pairs(dummy_embeddings, None, labels)
+        print("hello")
 
     return None
 
 
-classifier = RefDissassembler(TEST_CONFIG["MODEL_NAME"],
-                              TEST_CONFIG["NUM_CLASSES"],
-                              TEST_CONFIG["NUM_RELATIONS"]
-                              )
+classifier = RefDissassembler("DummyModel", 9, 1, True)
+
 tokenizer = AutoTokenizer.from_pretrained("FacebookAI/xlm-roberta-large")
 
 test_dataset = load_jsonl_dataset(os.path.join(annotations_folder, "test_examples.jsonl"))

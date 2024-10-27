@@ -23,13 +23,16 @@ def set_seed(seed):
 
 
 class RobertaCRF(nn.Module):
-    def __init__(self, model_name, num_labels):
-        super(RobertaCRF, self).__init__()
-        self.num_labels = num_labels
-        self.roberta = AutoModel.from_pretrained(model_name)
-        self.dropout = nn.Dropout(0.1)
-        self.hidden2tag = nn.Linear(self.roberta.config.hidden_size, self.num_labels)
-        self.crf = CRF(self.num_labels, batch_first=True)
+    def __init__(self, model_name, num_labels, debug=False):
+        if debug:
+            super(RobertaCRF, self).__init__()
+        else:
+            super(RobertaCRF, self).__init__()
+            self.num_labels = num_labels
+            self.roberta = AutoModel.from_pretrained(model_name)
+            self.dropout = nn.Dropout(0.1)
+            self.hidden2tag = nn.Linear(self.roberta.config.hidden_size, self.num_labels)
+            self.crf = CRF(self.num_labels, batch_first=True)
 
     def forward(self, input_ids, attention_mask=None, labels=None, threshold=None):
 
@@ -83,12 +86,17 @@ class RobertaCRF(nn.Module):
 
 class RefDissassembler(RobertaCRF):
 
-    def __init__(self, model_name, num_labels, num_relations):
-        super(RefDissassembler, self).__init__(model_name, num_labels)
-        self.relation_hidden = torch.nn.Linear(self.roberta.config.hidden_size * 2,
-                                               self.roberta.config.hidden_size)
-        self.relation_classifier_layer = torch.nn.Linear(self.roberta.config.hidden_size, num_relations)
-        self.loss_fn = BCEWithLogitsLoss()
+    def __init__(self, model_name, num_labels, num_relations, debug=False):
+        self.test = debug
+        if not debug:
+            super(RefDissassembler, self).__init__(model_name, num_labels)
+            self.relation_hidden = torch.nn.Linear(self.roberta.config.hidden_size * 2,
+                                                   self.roberta.config.hidden_size)
+            self.relation_classifier_layer = torch.nn.Linear(self.roberta.config.hidden_size, num_relations)
+            self.loss_fn = BCEWithLogitsLoss()
+        else:
+            super(RefDissassembler, self).__init__(model_name, num_labels, debug=True)
+            self.embedding = nn.Embedding(9999999, 128)
 
     def forward(self, input_ids, attention_mask=None, labels=None, relations=None, threshold=None, r_threshold=0.5):
         """
@@ -105,6 +113,9 @@ class RefDissassembler(RobertaCRF):
 
         if threshold:
             pass
+
+        if self.test:
+            return self.embedding(input_ids)
 
         outputs = self.roberta(input_ids, attention_mask=attention_mask)
         sequence_output = self.dropout(outputs[0])
