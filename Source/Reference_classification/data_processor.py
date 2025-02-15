@@ -1,16 +1,12 @@
 import torch
-from datasets import Dataset
+from tqdm import tqdm
+from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from Source.Utils.labels import TAG2ID, POSSIBLE_RELATIONS
-# import matplotlib.pyplot as plt
-from Source.Logging.loggers import get_logger
-
-# TODO: Load the Jsonl file directly into a Dataset object
-#         - Figure out the how the content of the jsonl file should look like
 
 
 # Class modelling the Dataset
-class BatchEncodingDataset:
+class BatchEncodingDataset(Dataset):
     def __init__(self, batch_encoding):
         self.batch_encoding = batch_encoding
 
@@ -44,6 +40,41 @@ def print_labeled_sequence(tokenizer, input_ids, labels):
                 s = ""
 
     print(labeled_sequences)
+
+
+def collate_fn(batch):
+    """
+    Custom collate function for DataLoader to handle batching of dictionaries with varying lengths.
+    This function is used to pad the relations list in each batch to the maximum length of relations in the batch.
+
+    Parameters:
+    batch (List[Dict]): A list of dictionaries, where each dictionary represents a sample.
+                        Each dictionary contains the following keys:
+                        - "relations": A list of integers representing the relations for the sample.
+
+    Returns:
+    Dict: A dictionary containing the collated and padded batch data.
+          The dictionary has the following keys:
+          - "relations": A tensor of shape (batch_size, max_rel_length) containing the padded relations.
+    """
+    keys = batch[0].keys()
+    collated = {}
+
+    max_rel_length = max(len(item["relations"]) for item in batch)
+
+    for key in keys:
+        if key == "relations":
+            padded_relations = []
+            for item in batch:
+                rels = item[key]  # Tensor of shape [N, 2]
+                pad_amount = max_rel_length - rels.shape[0]
+                pad_tensor = torch.full((pad_amount, 2), -1, dtype=rels.dtype)  # Padding tensor
+                padded_relations.append(torch.cat([rels, pad_tensor], dim=0))  # Concatenate
+            collated[key] = torch.stack(padded_relations)  # Stack into batch tensor
+        else:
+            collated[key] = torch.stack([item[key].clone().detach() for item in batch])
+
+    return collated
 
 
 #######################################################
@@ -107,7 +138,9 @@ def tokenize_and_align_labels(tokenizer, examples, tag2id, max_length, remove_re
                                        )
 
     all_labels = []
-    for i, text in enumerate(examples["text"]):
+    for i, text in tqdm(enumerate(examples["text"]),
+                        total=len(examples['text']),
+                        desc="Tokenizing and aligning labels with their corresponding tokens: "):
 
         entities = examples["entities"][i]
         if not remove_refs:
@@ -129,6 +162,36 @@ def tokenize_and_align_labels(tokenizer, examples, tag2id, max_length, remove_re
     return tokenized_inputs
 
 
+def build_relation_matrix_v2(entities, relations):
+    # List of relation matrices
+    relation_matrices = []
+
+    for set_index, entity_set in tqdm(enumerate(entities),
+                                      total=len(entities),
+                                      desc="Building the relations matrix: "):
+
+        relations_set = []
+
+        if len(entity_set) > 1:
+            # Sort entities based on their start index (start_offset)
+            entity_set.sort(key=lambda element: element["start_offset"])
+
+            for relation in relations[set_index]:
+                relation_position_based = [-1, -1]
+                start_entity_id, target_entity_id = relation["from_id"], relation["to_id"]
+                for eid, entity in enumerate(reversed(entity_set)):
+                    if entity["id"] == start_entity_id:
+                        relation_position_based[0] = eid
+                    elif entity["id"] == target_entity_id:
+                        relation_position_based[1] = eid
+                    if relation_position_based[0] != -1 and relation_position_based[1] != -1:
+                        break
+                relations_set.append(relation_position_based)
+        relation_matrices.append(relations_set)
+
+    return relation_matrices
+
+
 def build_relation_matrix(entities, relations):
     """
     :param entities: List[ List [ dict ]], (#Examples, #Entities, EntityObject) entities as read from the dataset
@@ -145,8 +208,11 @@ def build_relation_matrix(entities, relations):
     """
     # List of relation matrices
     relation_matrices = []
+    max_relations_length = 0
 
-    for set_index, entity_set in enumerate(entities):
+    for set_index, entity_set in tqdm(enumerate(entities),
+                                      total=len(entities),
+                                      desc="Building the relations matrix: "):
 
         relations_set = []
         # remove ref labeled entities
@@ -180,11 +246,11 @@ def build_relation_matrix(entities, relations):
                             relations_set.append(0)
 
         relation_matrices.append(relations_set)
+        max_relations_length = max(max_relations_length, len(relations_set))
 
     # pad all lists in the relation_matrices to the length of the longest relations_set
-    longest_relations_set = max(len(relation) for relation in relation_matrices)
     for relation_set in relation_matrices:
-        relation_set.extend([-1] * (longest_relations_set - len(relation_set)))
+        relation_set.extend([-1] * (max_relations_length - len(relation_set)))
 
     return relation_matrices
 
@@ -224,12 +290,14 @@ def get_dataloaders_with_labels_and_relations(tokenizer, dataset, batch_size, ta
     :return:
     """
     encoded_dataset = tokenize_and_align_labels(tokenizer, dataset, tag2id, max_length, remove_refs=True)
-    encoded_dataset["relations"] = build_relation_matrix(dataset["entities"], dataset["relations"])
-    batch_encoding_dataset = BatchEncodingDataset(encoded_dataset.convert_to_tensors("pt"))
+    encoded_dataset["relations"] = build_relation_matrix_v2(dataset["entities"], dataset["relations"])
+    # batch_encoding_dataset = BatchEncodingDataset(encoded_dataset.convert_to_tensors("pt"))
+
+    batch_encoding_dataset = BatchEncodingDataset(encoded_dataset)
     # encoded_dataset["relations"] = [[0] * len(dataset["relations"])] * len(dataset["relations"])
 
     # Initialize dataloader
-    dataloader = DataLoader(batch_encoding_dataset, batch_size=batch_size, shuffle=False)
+    dataloader = DataLoader(batch_encoding_dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
 
     return dataloader
 

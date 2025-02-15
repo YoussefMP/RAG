@@ -1,9 +1,10 @@
-from transformers import AdamW, get_linear_schedule_with_warmup, AutoTokenizer
+from transformers import get_linear_schedule_with_warmup, AutoTokenizer
 from data_processor import get_dataloaders_with_labels_and_relations
 from sequence_classifier import RobertaCRF, RefDissassembler
 from Utils.io_operations import load_jsonl_dataset
 from sklearn.metrics import classification_report
 from Source.Logging.loggers import get_logger
+import torch.optim as optim
 from Utils.labels import *
 from utils import *
 from tqdm import tqdm
@@ -17,18 +18,18 @@ CONFIG = {
     "OUTPUT_DIR": paths.trained_models_folder,
     "MODEL_NAME": 'FacebookAI/xlm-roberta-large',
     "DEVICE": torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu'),
-    "BATCH_SIZE": 8,
+    "BATCH_SIZE": 32,
     "MAX_LENGTH": None,
     "NUM_CLASSES": 9,
     "NUM_RELATIONS": 1,
     "EPOCHS": 5,
-    "LEARNING_RATE": 2e-5,
-    "VERSION": "Disassembler_v1.0",
-    "Comment": "Dataset with relation annotations. Updated labels.",
+    "LEARNING_RATE": 2e-05,
+    "VERSION": "Disassembler_v1.8",
+    "Comment": "Implemented the dynamic decay rate for lambda + increased batch size + introduced gradient clipping",
     "TRAINING_DATASET": "Annotated_dataset",
-    "SPLIT_SIZE": 0.25,
-    # "DATASET_VERSION": "VRT5.3",
-    "DATASET_VERSION": "VD5.4_balanced",
+    "SPLIT_SIZE": 0.2,
+    "DATASET_VERSION": "VD5.5_balanced",
+    # "DATASET_VERSION": "VDV5.4",
     "VALIDATION_VERSION": "VDV5.4",
     "CHECKPOINT": [],
     "PIPELINE": ["TRAIN", "EVAL", "VALIDATE"]
@@ -38,13 +39,27 @@ CONFIG = {
 logger = get_logger("RD_trainer_logger", "Training_logs.log")
 
 
+def freeze_roberta_crf(model):
+    for param in model.roberta.parameters():
+        param.requires_grad = False
+    for param in model.hidden2tag.parameters():
+        param.requires_grad = False
+    for param in model.crf.parameters():
+        param.requires_grad = False
+
+
 def train(model, dataloader, device, epochs, learning_rate, val_set=None):
     # losses records
     losses = []
     # Training parameters
-    optimizer = AdamW(model.parameters(), lr=learning_rate)
+    optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
     total_steps = len(dataloader) * epochs
-    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=0, num_training_steps=total_steps)
+    scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=250, num_training_steps=total_steps)
+
+    model_frozen = False
+    old_loss = None
+    factor = 300
+    alpha = 0.1
 
     # Training loop
     model.to(device)
@@ -54,8 +69,9 @@ def train(model, dataloader, device, epochs, learning_rate, val_set=None):
         logger.info(f"\t\tStarting epoch {epoch+1}")
         start = time.time()
         model.train()
-        total_loss = 0
+        total_class_loss, total_rel_loss = 0, 0
         batch_count = 0
+        validation_scores = -1
         for batch in tqdm(dataloader, total=len(dataloader), desc=f"Training Epoch {epoch}: "):
             optimizer.zero_grad()
             input_ids = batch['input_ids'].to(device)
@@ -64,41 +80,65 @@ def train(model, dataloader, device, epochs, learning_rate, val_set=None):
 
             # Removing the padding from the relations and flattening the labels
             relations = batch["relations"]
-            relations = relations.tolist()
-            processed_rel_batch = []
-            for ex_relations in relations:
-                if -1 in ex_relations:
-                    processed_rel_batch += ex_relations[:ex_relations.index(-1)]
-                else:
-                    processed_rel_batch += ex_relations
 
-            loss, rel_loss = model(input_ids, attention_mask, labels, processed_rel_batch)
-            total_loss += loss.item()
+            class_loss, rel_loss = model(input_ids, attention_mask, labels, relations)
 
-            # if batch_count % 50 == 0:
-            logger.info(f'\t\t\tTotal loss for batch : {loss.item()} The relation_extraction loss = {rel_loss.item()}')
+            if class_loss is not None:
 
-            loss.backward()
-            optimizer.step()
-            scheduler.step()
-            # optimizing by emptying cache and collecting garbage
-            gc.collect()
-            torch.cuda.empty_cache()
+                # if validation_scores < 0.983 and not model_frozen:
+                #     if old_loss is None:
+                #         old_loss = class_loss.item()
+                #     else:
+                #         factor *= (class_loss.item() / old_loss)
+                #         old_loss = class_loss.item()
+                #     loss = class_loss + rel_loss * factor
+                #
+                # elif validation_scores > 0.99:
+                #     logger.info(f"Saving model's weight with a high score {validation_scores}.")
+                #     save_model(CONFIG, model, losses, checkpoint="HS")
+                # else:
+                #     if not model_frozen:
+                #         logger.info(f'>>>>>>>>>>> Just Froze The model weights <<<<<<<<<<<<<<<<')
+                #     freeze_roberta_crf(model)
+                #     model_frozen = True
+                #     loss = rel_loss
 
-            if (batch_count == 0 or batch_count == len(dataloader)//2 or batch_count+1 == len(dataloader)) and \
-                    val_set is not None:
-                logger.info(f'\t\t\tValidation round ...')
-                evaluate_model(model, val_set, device)
-            batch_count += 1
+                current_ratio = class_loss.item() / rel_loss.item()
+                factor = factor * (1 - alpha) + current_ratio * alpha
+                factor = max(1, factor)
+
+                total_class_loss += class_loss.item()
+                total_rel_loss += rel_loss.item()
+
+                loss = class_loss + factor * rel_loss
+
+                if batch_count % 10 == 0:
+                    logger.info(f'\t\t\t Label Prediction Loss= {class_loss.item()}\t '
+                                f'Relation_extraction loss= {rel_loss.item()}\t '
+                                f'lambda= {factor}')
+
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
+                scheduler.step()
+                torch.cuda.empty_cache()
+
+                batch_count += 1
+
+        if val_set is not None:
+            logger.info(f'\t\t\tValidation round ...')
+            scores = evaluate_model(model, val_set, device)
+            validation_scores = scores["macro avg"]["f1-score"]
 
         end = time.time()
-        avg_train_loss = total_loss / len(dataloader)
+        avg_class_loss = total_class_loss / len(dataloader)
+        avg_rel_loss = total_rel_loss / len(dataloader)
         logger.info(
-            f'Epoch {epoch+1}, Loss: {avg_train_loss} - runtime for epoch: {datetime.timedelta(seconds=end-start)}'
+            f'Epoch {epoch+1}, Loss: {(avg_class_loss, avg_rel_loss)} - runtime for epoch: {datetime.timedelta(seconds=end-start)}'
         )
-        losses.append(avg_train_loss)
+        losses.append((avg_class_loss, avg_rel_loss))
 
-        if epoch + 1 in CONFIG["CHECKPOINT"] and epoch != epochs-1:
+        if epoch + 1 in CONFIG["CHECKPOINT"]:
             logger.info(f"Saving trained model with config")
             save_model(CONFIG, model, losses, checkpoint=epoch)
 
@@ -120,12 +160,6 @@ def evaluate_model(model, dataloader, device):
 
             relations = batch['relations'].to(device)
             relations = relations.tolist()
-            processed_rel_batch = []
-            for ex_relations in relations:
-                if -1 in ex_relations:
-                    processed_rel_batch += ex_relations[:ex_relations.index(-1)]
-                else:
-                    processed_rel_batch += ex_relations
 
             output_ref, output_rel = model(input_ids, attention_mask, labels)
 
@@ -133,9 +167,13 @@ def evaluate_model(model, dataloader, device):
             predictions.extend(output_ref)
             true_labels.extend([labels[i].tolist()[:len(o)] for i, o in enumerate(output_ref)])
 
-            if output_rel is not None:
-                predictions_rel.extend(output_rel)
-                true_rel.extend(processed_rel_batch)
+            predictions_rel.extend(output_rel[1].squeeze().tolist())
+            for pbid, pairs_subbatch in enumerate(output_rel[0]):
+                for pair in pairs_subbatch:
+                    if pair in relations[pbid]:
+                        true_rel.append(1)
+                    else:
+                        true_rel.append(0)
 
     # Convert predictions and labels to tag names
     pred_tags = [[ID2TAG[id] for id in pred] for pred in predictions]
@@ -145,17 +183,18 @@ def evaluate_model(model, dataloader, device):
     flat_pred_tags = [item for sublist in pred_tags for item in sublist]
     flat_true_tags = [item for sublist in true_tags for item in sublist]
 
-    print("Label classification report")
-    print(classification_report(flat_true_tags, flat_pred_tags, zero_division=0))
-    print("\n\n================================\n\nRelation classification report")
-    print(classification_report(true_rel, predictions_rel, zero_division=0))
-    logger.info(f"\n {classification_report(flat_true_tags, flat_pred_tags)}")
-    logger.info(f"\n {classification_report(true_rel, predictions_rel)}")
+    # print("Label classification report")
+    # print(classification_report(flat_true_tags, flat_pred_tags, zero_division=0))
+    # print("\n\n================================\n\nRelation classification report")
+    # print(classification_report(true_rel, predictions_rel, zero_division=0))
+    logger.info(f"\n {classification_report(flat_true_tags, flat_pred_tags, zero_division=0, digits=4)}")
+    logger.info(f"\n {classification_report(true_rel, predictions_rel, digits=4, zero_division=0)}")
+    return classification_report(flat_true_tags, flat_pred_tags, digits=4, zero_division=0, output_dict=True)
 
 
 if __name__ == '__main__':
     # load training data from json file
-    logger.info(f"Loading training data from json file: {paths.annotations_file}")
+    logger.info(f"Loading training data from json file: {CONFIG['TRAINING_DATASET']}_{CONFIG['DATASET_VERSION']}.jsonl")
     dataset = load_jsonl_dataset(os.path.join(paths.annotations_folder,
                                               f"{CONFIG['TRAINING_DATASET']}_{CONFIG['DATASET_VERSION']}.jsonl"))
 
@@ -193,7 +232,7 @@ if __name__ == '__main__':
         # Split dataset into train and validation sets (for demonstration)
         dataset = dataset.train_test_split(test_size=CONFIG["SPLIT_SIZE"])
         # initialize dataloaders
-        logger.info(f"Initializing dataloaders")
+        logger.info(f"Initializing dataloaders, with Eval set")
         train_dataloader = get_dataloaders_with_labels_and_relations(tokenizer,
                                                                      dataset["train"], CONFIG["BATCH_SIZE"],
                                                                      TAG2ID,
@@ -209,7 +248,7 @@ if __name__ == '__main__':
                            )
     else:
         # initialize dataloaders
-        logger.info(f"Initializing dataloaders")
+        logger.info(f"Initializing dataloaders without eval set")
         train_dataloader = get_dataloaders_with_labels_and_relations(tokenizer,
                                                                      dataset, CONFIG["BATCH_SIZE"],
                                                                      TAG2ID,
@@ -231,7 +270,7 @@ if __name__ == '__main__':
         loss_record = train(classifier, train_dataloader, CONFIG["DEVICE"], CONFIG["EPOCHS"], CONFIG["LEARNING_RATE"],
                             validation_dataloader)
         logger.info(f"Saving trained model with config")
-        # save_model(CONFIG, classifier, loss_record)
+        save_model(CONFIG, classifier, loss_record)
 
     if "EVAL" in CONFIG["PIPELINE"]:
         logger.info(f"Evaluating trained model")

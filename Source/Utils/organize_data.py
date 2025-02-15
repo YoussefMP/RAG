@@ -40,7 +40,7 @@ def convert_export_to_import_format():
             print("GGSDG", e)
         return result
 
-    files = ["annotated_dataset_long.jsonl"]
+    files = ["Annotated_dataset_VD5.4_balanced.jsonl"]
 
     for file_name in files:
         file_name = os.path.join(paths.annotations_folder, file_name)
@@ -58,6 +58,7 @@ def convert_export_to_import_format():
             content.append(jsonl)
 
         dump_to_jsonl(file_name.split(".")[0] + "_import.jsonl", content)
+        print(f"saved file under {file_name.split('.')[0] + '_import.jsonl'}")
 
 
 convert_export_to_import_format()
